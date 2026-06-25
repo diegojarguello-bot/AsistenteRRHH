@@ -517,7 +517,7 @@ const COLECCIONES = ["operadores", "eventos", "vacacionesCreditos", "compensator
 
 const DB = {
   operadores: [],
-  sectores: ["Pruebas", "Estetica", "Guardado", "Ochava"],
+  sectores: ["Pruebas", "Estetica", "Guardado", "Ochava", "Coordinacion", "Informatica", "Movimientos"],
   eventos: [],
   vacacionesCreditos: [],
   compensatorios: [],
@@ -908,6 +908,11 @@ const ViewBase = {
           <h2>Base info operadores</h2>
           <div style="display:flex;align-items:center;gap:12px;">
             <span class="count">${ops.length} operarios cargados</span>
+            ${ops.length === 0 ? `
+            <button class="btn" id="btnImportarOperadores" style="border-color:var(--sage);color:var(--sage);">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>
+              Importar lista inicial (37)
+            </button>` : ''}
             <button class="btn btn-primary" id="btnNuevoOperador">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
               Nuevo operario
@@ -918,7 +923,7 @@ const ViewBase = {
           <table class="base-table">
             <thead>
               <tr class="base-group-row">
-                <th colspan="8" class="grp-personal">Información personal</th>
+                <th colspan="7" class="grp-personal">Información personal</th>
                 <th colspan="3" class="grp-operativa">Información operativa</th>
                 <th></th>
               </tr>
@@ -930,7 +935,6 @@ const ViewBase = {
                 <th style="min-width:105px;">Fecha ing.</th>
                 <th style="min-width:85px;">Antigüedad</th>
                 <th style="min-width:115px;">Celular</th>
-                <th style="min-width:170px;">Correo personal</th>
                 <th style="min-width:90px;">Turno</th>
                 <th style="min-width:110px;">Sector</th>
                 <th style="min-width:170px;">Correo empresarial</th>
@@ -977,6 +981,8 @@ const ViewBase = {
       btn.addEventListener('click', (e)=> this.onDelete(e));
     });
     document.getElementById('btnNuevoOperador').addEventListener('click', ()=> this.onNuevo());
+    const btnImport = document.getElementById('btnImportarOperadores');
+    if(btnImport) btnImport.addEventListener('click', ()=> this.onImportar());
   },
 
   rowHTML(op){
@@ -990,7 +996,6 @@ const ViewBase = {
         <td><input type="date" data-field="fechaIngreso" value="${op.fechaIngreso || ''}"></td>
         <td class="col-antig">${antig}</td>
         <td><input type="text" data-field="celular" value="${this.esc(op.celular)}" placeholder="—"></td>
-        <td><input type="text" data-field="correoPersonal" value="${this.esc(op.correoPersonal)}" placeholder="—"></td>
         <td>
           <select data-field="turno">
             <option value="AM" ${op.turno==='AM'?'selected':''}>AM</option>
@@ -1048,11 +1053,67 @@ const ViewBase = {
     });
   },
 
+  onImportar(){
+    if(DB.operadores.length > 0){
+      Toast.show('Ya hay operarios cargados — la importación inicial no está disponible');
+      return;
+    }
+    Modal.open({
+      title: 'Importar lista inicial',
+      bodyHTML: '<p>Se van a cargar <strong>37 operarios</strong> a la base de datos. Esta acción es solo para la carga inicial — usala una sola vez.</p>',
+      confirmText: 'Importar 37 operarios',
+      onConfirm: ()=>{
+        DB.operadores = [
+      { id:'op1', apellidoNombre:'PALERMO, ERNESTO JOSE', direccion:'', legajo:'1134', cuil:'20420549246', fechaIngreso:'2021-06-25', celular:'', turno:'AM', sector:'Guardado', correoEmpresarial:'e.palermo@unionpel.com.ar' },
+      { id:'op2', apellidoNombre:'VENANCIO, IGNACIO JULIAN', direccion:'', legajo:'1137', cuil:'20411710336', fechaIngreso:'2021-07-21', celular:'', turno:'AM', sector:'Guardado', correoEmpresarial:'i.venancio@unionpel.com.ar' },
+      { id:'op3', apellidoNombre:'LUJAN, JULIO CESAR', direccion:'Quintana 2575 Talar', legajo:'1172', cuil:'20360795684', fechaIngreso:'2023-07-10', celular:'', turno:'AM', sector:'Ochava', correoEmpresarial:'jclujan@unionpel.com.ar' },
+      { id:'op4', apellidoNombre:'TELLO, LEANDRO EZEQUIEL', direccion:'', legajo:'1029', cuil:'20373873544', fechaIngreso:'2018-07-16', celular:'', turno:'PM', sector:'Ochava', correoEmpresarial:'l.tello@unionpel.com.ar' },
+      { id:'op5', apellidoNombre:'SALINAS, LUCAS AGUSTIN', direccion:'', legajo:'1148', cuil:'20397073425', fechaIngreso:'2022-01-11', celular:'', turno:'AM', sector:'Guardado', correoEmpresarial:'lu.salinas@unionpel.com.ar' },
+      { id:'op6', apellidoNombre:'SAYAVEDRA, NAHUEL', direccion:'', legajo:'1102', cuil:'20406241441', fechaIngreso:'2021-03-02', celular:'', turno:'AM', sector:'Ochava', correoEmpresarial:'nsayavedra@unionpel.com.ar' },
+      { id:'op7', apellidoNombre:'BRAUN, ANGEL JOSE', direccion:'Monaco 3040 M. savio', legajo:'1144', cuil:'20425953673', fechaIngreso:'2021-11-01', celular:'', turno:'AM', sector:'Guardado', correoEmpresarial:'a.braun@unionpel.com.ar' },
+      { id:'op8', apellidoNombre:'BUSTAMANTE, AXEL CRUZ', direccion:'Ozanam Federico 3444 D Torcuato', legajo:'1124', cuil:'20414001905', fechaIngreso:'2021-05-10', celular:'', turno:'PM', sector:'Ochava', correoEmpresarial:'a.bustamante@unionpel.com.ar' },
+      { id:'op9', apellidoNombre:'BARRETO, CARLOS ROBERTO', direccion:'', legajo:'', cuil:'', fechaIngreso:'', celular:'', turno:'AM', sector:'Coordinacion', correoEmpresarial:'c.barreto@unionpel.com.ar' },
+      { id:'op10', apellidoNombre:'ARGÜELLO, DIEGO JAVIER', direccion:'', legajo:'785', cuil:'20347308448', fechaIngreso:'2015-11-02', celular:'', turno:'AM', sector:'Coordinacion', correoEmpresarial:'d.arguello@unionpel.com.ar' },
+      { id:'op11', apellidoNombre:'FERRARA FAMA, ESTEBAN ANDRES', direccion:'R de Escalada 732 Escobar', legajo:'1074', cuil:'20381783384', fechaIngreso:'2019-08-01', celular:'', turno:'AM', sector:'Informatica', correoEmpresarial:'e.ferrara@unionpel.com.ar' },
+      { id:'op12', apellidoNombre:'AGÜERO, ENZO MIGUEL', direccion:'Pje Arrieta 1834 A. Sourdeaux', legajo:'1128', cuil:'20421145688', fechaIngreso:'2021-05-24', celular:'', turno:'AM', sector:'Pruebas', correoEmpresarial:'eaguero@unionpel.com.ar' },
+      { id:'op13', apellidoNombre:'SANCHEZ, JUAN PABLO', direccion:'', legajo:'1157', cuil:'20345903845', fechaIngreso:'2022-07-08', celular:'', turno:'AM', sector:'Pruebas', correoEmpresarial:'juansanchez@unionpel.com.ar' },
+      { id:'op14', apellidoNombre:'MENDOZA, MARCOS ENRIQUE', direccion:'Chiclana 337 Pacheco', legajo:'754', cuil:'23-32.421.554-9', fechaIngreso:'2014-02-03', celular:'', turno:'PM', sector:'Estetica', correoEmpresarial:'m.mendoza@unionpel.com.ar' },
+      { id:'op15', apellidoNombre:'Agustin Farias', direccion:'Quintana 2298 S. Fernando', legajo:'1016', cuil:'20386593346', fechaIngreso:'2018-04-23', celular:'', turno:'PM', sector:'Movimientos', correoEmpresarial:'ma.farias@unionpel.com.ar' },
+      { id:'op16', apellidoNombre:'LUQUES, MARIANO EZEQUIEL', direccion:'Villa de mayo 4698 A. Sourdeaux', legajo:'1104', cuil:'20391179361', fechaIngreso:'2021-03-03', celular:'', turno:'AM', sector:'Ochava', correoEmpresarial:'mluques@unionpel.com.ar' },
+      { id:'op17', apellidoNombre:'CAPPELLERE, PABLO EMMANUEL', direccion:'Potosi 5461 JC paz', legajo:'1070', cuil:'20359492945', fechaIngreso:'2019-04-15', celular:'', turno:'AM', sector:'Movimientos', correoEmpresarial:'pcappellere@unionpel.com.ar' },
+      { id:'op18', apellidoNombre:'PAIVA, PABLO NICOLAS', direccion:'', legajo:'755', cuil:'20380097940', fechaIngreso:'2014-02-10', celular:'', turno:'AM', sector:'Guardado', correoEmpresarial:'ppaiva@unionpel.com.ar' },
+      { id:'op19', apellidoNombre:'FESTA, RODRIGO NAHUEL', direccion:'', legajo:'792', cuil:'20372265044', fechaIngreso:'2015-12-17', celular:'', turno:'AM', sector:'Coordinacion', correoEmpresarial:'r.festa@unionpel.com.ar' },
+      { id:'op20', apellidoNombre:'LARA, RODRIGO LEONEL', direccion:'R Peña 1372 El talar', legajo:'1109', cuil:'20400937401', fechaIngreso:'2021-03-10', celular:'', turno:'PM', sector:'Guardado', correoEmpresarial:'rlara@unionpel.com.ar' },
+      { id:'op21', apellidoNombre:'RUIZ DIAZ, RENZO ROMAN', direccion:'', legajo:'1152', cuil:'20435150536', fechaIngreso:'2022-05-09', celular:'', turno:'AM', sector:'Guardado', correoEmpresarial:'rruiz@unionpel.com.ar' },
+      { id:'op22', apellidoNombre:'VAZQUEZ, SERGIO NAHUEL', direccion:'', legajo:'1108', cuil:'20452034787', fechaIngreso:'2021-03-10', celular:'', turno:'AM', sector:'Guardado', correoEmpresarial:'snvazquez@unionpel.com.ar' },
+      { id:'op23', apellidoNombre:'REINAGA, SANTIAGO EZEQUIEL', direccion:'', legajo:'1111', cuil:'20391564079', fechaIngreso:'2021-03-12', celular:'', turno:'AM', sector:'Ochava', correoEmpresarial:'sreinaga@unionpel.com.ar' },
+      { id:'op24', apellidoNombre:'ACOSTA ANDRES, SANTIAGO E.', direccion:'Tucuman 336 Garin', legajo:'990', cuil:'27361502391', fechaIngreso:'2017-02-01', celular:'', turno:'PM', sector:'Estetica', correoEmpresarial:'' },
+      { id:'op25', apellidoNombre:'AGÜERO, LUCAS JUAN DAVID', direccion:'Posadas 50 El talar', legajo:'1165', cuil:'20422832484', fechaIngreso:'2023-04-11', celular:'', turno:'PM', sector:'Pruebas', correoEmpresarial:'' },
+      { id:'op26', apellidoNombre:'BARBONA, ANIBAL', direccion:'Lucio Mancilla 550 Pacheco', legajo:'1156', cuil:'20360586074', fechaIngreso:'2022-07-08', celular:'', turno:'PM', sector:'Pruebas', correoEmpresarial:'' },
+      { id:'op27', apellidoNombre:'CRUZ, JORGE ANTONIO', direccion:'Estrada 5575 Virreyes', legajo:'1069', cuil:'20362493170', fechaIngreso:'2019-04-15', celular:'', turno:'AM', sector:'Estetica', correoEmpresarial:'' },
+      { id:'op28', apellidoNombre:'FRANCO MAXIMILIANO GASTÓN', direccion:'', legajo:'1188', cuil:'32361944', fechaIngreso:'2025-06-17', celular:'', turno:'PM', sector:'Pruebas', correoEmpresarial:'' },
+      { id:'op29', apellidoNombre:'GALLARDO, KEVIN AGUSTIN', direccion:'Santa Angela 3025   escobar', legajo:'1125', cuil:'20423461218', fechaIngreso:'2021-05-10', celular:'', turno:'AM', sector:'Estetica', correoEmpresarial:'' },
+      { id:'op30', apellidoNombre:'GODOY, LUCAS NICOLAS', direccion:'', legajo:'1047', cuil:'20385472847', fechaIngreso:'2018-12-10', celular:'', turno:'AM', sector:'Pruebas', correoEmpresarial:'' },
+      { id:'op31', apellidoNombre:'GOMEZ, LUCIANO EZEQUIEL MAXIMILIANO', direccion:'', legajo:'1127', cuil:'20388209950', fechaIngreso:'2021-05-24', celular:'', turno:'PM', sector:'Pruebas', correoEmpresarial:'' },
+      { id:'op32', apellidoNombre:'GONZALEZ, MAURO DAVID', direccion:'Oribe 3877 J.C.Paz', legajo:'1064', cuil:'20383912246', fechaIngreso:'2019-03-20', celular:'', turno:'AM', sector:'Pruebas', correoEmpresarial:'' },
+      { id:'op33', apellidoNombre:'MAZUR, LAUTARO TOMAS', direccion:'Santa Cruz 20  Escobar', legajo:'1103', cuil:'20410992494', fechaIngreso:'2021-03-02', celular:'', turno:'PM', sector:'Guardado', correoEmpresarial:'' },
+      { id:'op34', apellidoNombre:'MEDINA, MARCELO NAHUEL', direccion:'Monaco 2980 Savio', legajo:'1164', cuil:'20428406134', fechaIngreso:'2023-04-11', celular:'', turno:'PM', sector:'Pruebas', correoEmpresarial:'' },
+      { id:'op35', apellidoNombre:'PADILLA FEDERICO', direccion:'', legajo:'1189', cuil:'', fechaIngreso:'', celular:'', turno:'PM', sector:'Pruebas', correoEmpresarial:'' },
+      { id:'op36', apellidoNombre:'QUINTEROS, ALEX SEBASTIAN', direccion:'', legajo:'1118', cuil:'20433910894', fechaIngreso:'2021-04-07', celular:'', turno:'AM', sector:'Pruebas', correoEmpresarial:'' },
+      { id:'op37', apellidoNombre:'ZALAZAR RAMIREZ, ALEN', direccion:'', legajo:'1122', cuil:'20429471185', fechaIngreso:'2021-04-23', celular:'', turno:'PM', sector:'Pruebas', correoEmpresarial:'' },
+        ];
+        Toast.show('37 operarios importados correctamente');
+        this.render();
+        Bus.emit();
+      }
+    });
+  },
+
   onNuevo(){
     const newId = 'op' + (Math.max(0, ...DB.operadores.map(o=> parseInt(o.id.replace('op',''))||0)) + 1);
     DB.operadores.push({
       id:newId, apellidoNombre:'NUEVO OPERARIO', direccion:'', legajo:'', cuil:'',
-      fechaIngreso:'', celular:'', correoPersonal:'', turno:'AM', sector:'', correoEmpresarial:''
+      fechaIngreso:'', celular:'', turno:'AM', sector:'', correoEmpresarial:''
     });
     Toast.show('Operario agregado — completá sus datos');
     Bus.emit();
@@ -1157,8 +1218,10 @@ const ViewCalendario = {
             <td class="cal-namecol">Operario</td>
             ${fechas.map(f=>{
               const d = DateUtil.parse(f);
-              const diaLabel = `${d.getDate()}/${d.getMonth()+1}`;
-              return `<td class="cal-daycol ${f===HOY?'is-hoy':''}" data-fecha="${f}">${diaLabel}</td>`;
+              const diasAbrev = ['dom','lun','mar','mié','jue','vie','sáb'];
+              const nombreDia = diasAbrev[d.getDay()];
+              const diaLabel = `${d.getDate()}-${d.getMonth()+1}`;
+              return `<td class="cal-daycol ${f===HOY?'is-hoy':''}" data-fecha="${f}"><span class="cal-day-name">${nombreDia}</span><span class="cal-day-num">${diaLabel}</span></td>`;
             }).join('')}
           </tr>
         </thead>
@@ -1223,7 +1286,10 @@ const ViewCalendario = {
       thead .cal-namecol{ background:var(--paper-dim); font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-dim); font-weight:700; }
       tbody tr:hover .cal-namecol{ background:var(--paper-dim); }
 
-      .cal-daycol{ width:var(--colw); min-width:var(--colw); font-family:var(--f-mono); font-size:10.5px; color:var(--ink-dim); background:var(--paper-dim); font-weight:500; cursor:default; }
+      .cal-daycol{ width:var(--colw); min-width:var(--colw); font-family:var(--f-mono); font-size:10.5px; color:var(--ink-dim); background:var(--paper-dim); font-weight:500; cursor:default; height:38px !important; }
+      .cal-day-name{ display:block; font-size:9px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-dim); opacity:.75; line-height:1.4; }
+      .cal-day-num{ display:block; font-size:11px; font-weight:600; color:var(--ink); line-height:1.4; }
+      .cal-daycol.is-hoy .cal-day-name, .cal-daycol.is-hoy .cal-day-num{ color:#8A6D2C; }
       .cal-hoy-row td{ height:18px; border-bottom:none; font-size:9.5px; font-weight:700; color:var(--steel); letter-spacing:.08em; background:transparent; border-right:1px solid transparent; }
       .is-hoy-marker{ background:var(--amber-soft) !important; color:#8A6D2C !important; }
 
