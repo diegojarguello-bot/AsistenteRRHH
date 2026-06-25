@@ -248,6 +248,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 .tag-am{background:var(--steel-soft);color:var(--steel);}
 .tag-pm{background:var(--umber-soft);color:var(--umber);}
+.tag-coord{background:#EDE6F5;color:#6B4E96;}
 
 input[type=text], input[type=date], input[type=number], input[type=email], textarea, select{
   border:1px solid var(--line);
@@ -434,6 +435,10 @@ h1,h2,h3{font-family:var(--f-display);}
         <svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg>
         Base de<br>operadores
       </button>
+      <button class="rail-tab" data-view="historial">
+        <svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>
+        Historial<br>de eventos
+      </button>
     </div>
     <div class="rail-foot">v1.0</div>
   </nav>
@@ -459,6 +464,7 @@ h1,h2,h3{font-family:var(--f-display);}
     <div class="view view-hidden" id="view-vacaciones"></div>
     <div class="view view-hidden" id="view-anotaciones"></div>
     <div class="view view-hidden" id="view-base"></div>
+    <div class="view view-hidden" id="view-historial"></div>
   </div>
 </div>
 
@@ -468,6 +474,7 @@ h1,h2,h3{font-family:var(--f-display);}
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <script>
 /* =======================================================================
@@ -517,7 +524,7 @@ const COLECCIONES = ["operadores", "eventos", "vacacionesCreditos", "compensator
 
 const DB = {
   operadores: [],
-  sectores: ["Pruebas", "Estetica", "Guardado", "Ochava", "Coordinacion", "Informatica", "Movimientos"],
+  sectores: ["Pruebas", "Estetica", "Guardado", "Ochava", "Coordinacion", "Informatica", "Movimientos", "Redes"],
   eventos: [],
   vacacionesCreditos: [],
   compensatorios: [],
@@ -525,6 +532,7 @@ const DB = {
   operadoresEnAnotaciones: [],
   anotaciones: [],
   notasGenerales: "",
+  historialOcultos: [], // ids de eventos que el usuario borró manualmente de la vista de Historial (el evento sigue en el calendario)
 };
 
 /* fecha "hoy" real del sistema (YYYY-MM-DD) */
@@ -562,6 +570,7 @@ function iniciarSincronizacion(){
       DB.operadoresEnAnotaciones = data.operadoresEnAnotaciones || [];
       DB.notasGenerales = data.notasGenerales || "";
       DB.asistenciaHoy = data.asistenciaHoy || {};
+      DB.historialOcultos = data.historialOcultos || [];
     }
     Bus.render && Bus.render();
   }, err=>{
@@ -606,6 +615,7 @@ async function guardarTodoEnFirestore(){
       operadoresEnAnotaciones: DB.operadoresEnAnotaciones,
       notasGenerales: DB.notasGenerales,
       asistenciaHoy: DB.asistenciaHoy,
+      historialOcultos: DB.historialOcultos,
     });
   }catch(err){
     console.error("Error guardando en Firestore:", err);
@@ -754,6 +764,7 @@ const Router = {
     vacaciones:  { title:'Vacaciones y francos', sub:'Carga de créditos y compensatorios' },
     anotaciones: { title:'Anotaciones y solicitudes', sub:'Novedades por operario y notas generales' },
     base:        { title:'Base de operadores', sub:'Información personal y operativa — fuente de verdad' },
+    historial:   { title:'Historial de eventos', sub:'Registros pasados de vacaciones, francos, ausencias y licencias' },
   },
   renderers: {}, // se completan en cada view-*.js
 
@@ -823,6 +834,30 @@ const Domain = {
     return cargado - usado;
   },
 
+  // Días de vacaciones asignados en el calendario cuya fecha todavía no llegó (pendientes de disfrutar)
+  vacacionesPendientesFuturas(operadorId){
+    return DB.eventos.filter(e=> e.operadorId===operadorId && e.tipo==='vacaciones' && e.fecha > HOY).length;
+  },
+
+  // Lotes de crédito de vacaciones con su saldo restante ya calculado (FIFO por año).
+  // Los lotes que llegaron a 0 no se devuelven (desaparecen de la vista, como se pidió).
+  lotesVacacionesConSaldo(operadorId){
+    const lotes = DB.vacacionesCreditos
+      .filter(v=> v.operadorId===operadorId)
+      .sort((a,b)=> a.anio-b.anio);
+    let usados = DB.eventos.filter(e=> e.operadorId===operadorId && e.tipo==='vacaciones').length;
+    const resultado = [];
+    for(const lote of lotes){
+      const consumidoDeEsteLote = Math.min(usados, lote.dias);
+      const restante = lote.dias - consumidoDeEsteLote;
+      usados -= consumidoDeEsteLote;
+      if(restante > 0){
+        resultado.push({ ...lote, restante });
+      }
+    }
+    return resultado;
+  },
+
   // Saldo de francos disponibles (compensatorios aceptados - francos ya tomados)
   saldoFrancos(operadorId){
     const aceptados = DB.compensatorios.filter(c=> c.operadorId===operadorId && c.estado==='aceptado').length;
@@ -888,6 +923,107 @@ const Domain = {
     }
     alerts.sort((a,b)=> a.dias-b.dias);
     return alerts;
+  },
+
+  // Vacaciones que arrancan en el mes calendario siguiente al actual (para el reporte mensual)
+  vacacionesDelProximoMes(){
+    const hoyDate = DateUtil.parse(HOY);
+    let mesObjetivo = hoyDate.getMonth() + 1;
+    let anioObjetivo = hoyDate.getFullYear();
+    if(mesObjetivo > 11){ mesObjetivo = 0; anioObjetivo++; }
+
+    const porOperador = {};
+    DB.eventos.filter(e=> e.tipo==='vacaciones').forEach(e=>{
+      (porOperador[e.operadorId] ||= []).push(e.fecha);
+    });
+
+    const resultado = [];
+    Object.entries(porOperador).forEach(([opId, fechas])=>{
+      fechas = [...new Set(fechas)].sort();
+      let bloque = [fechas[0]];
+      const bloques = [];
+      for(let i=1;i<fechas.length;i++){
+        if(DateUtil.diffDays(fechas[i-1], fechas[i]) === 1){
+          bloque.push(fechas[i]);
+        } else {
+          bloques.push(bloque); bloque=[fechas[i]];
+        }
+      }
+      bloques.push(bloque);
+      bloques.forEach(b=>{
+        const desde = b[0], hasta = b[b.length-1];
+        const dDesde = DateUtil.parse(desde);
+        if(dDesde.getMonth() === mesObjetivo && dDesde.getFullYear() === anioObjetivo){
+          const op = Domain.getOperador(opId);
+          if(!op) return;
+          resultado.push({ operador: op.apellidoNombre, desde, hasta, dias: b.length });
+        }
+      });
+    });
+    resultado.sort((a,b)=> a.desde.localeCompare(b.desde));
+    return resultado;
+  },
+
+  // ---------------- HISTORIAL DE EVENTOS ----------------
+
+  // Agrupa fechas consecutivas de un mismo tipo/operador en bloques {desde, hasta, dias}
+  _agruparBloques(fechas){
+    fechas = [...new Set(fechas)].sort();
+    if(fechas.length === 0) return [];
+    let bloque = [fechas[0]];
+    const bloques = [];
+    for(let i=1;i<fechas.length;i++){
+      if(DateUtil.diffDays(fechas[i-1], fechas[i]) === 1) bloque.push(fechas[i]);
+      else { bloques.push(bloque); bloque=[fechas[i]]; }
+    }
+    bloques.push(bloque);
+    return bloques.map(b=> ({ desde:b[0], hasta:b[b.length-1], dias:b.length }));
+  },
+
+  // Vacaciones cuyo bloque ya terminó (hasta < HOY), agrupadas por operario
+  historialVacaciones(){
+    const porOperador = {};
+    DB.eventos.filter(e=> e.tipo==='vacaciones' && !DB.historialOcultos.includes(e.id))
+      .forEach(e=> (porOperador[e.operadorId] ||= []).push(e.fecha));
+    const resultado = {};
+    Object.entries(porOperador).forEach(([opId, fechas])=>{
+      const bloques = this._agruparBloques(fechas).filter(b=> b.hasta < HOY);
+      if(bloques.length){
+        const ids = bloques.flatMap(b=> {
+          const idsDelBloque = [];
+          let cur = b.desde;
+          while(true){
+            const ev = DB.eventos.find(e=> e.operadorId===opId && e.fecha===cur && e.tipo==='vacaciones');
+            if(ev) idsDelBloque.push(ev.id);
+            if(cur === b.hasta) break;
+            cur = DateUtil.addDays(cur, 1);
+          }
+          return idsDelBloque;
+        });
+        resultado[opId] = { bloques, ids };
+      }
+    });
+    return resultado;
+  },
+
+  // Francos cuya fecha de goce ya pasó, agrupados por operario
+  historialFrancos(){
+    const porOperador = {};
+    DB.eventos.filter(e=> e.tipo==='franco' && e.fecha < HOY && !DB.historialOcultos.includes(e.id))
+      .forEach(e=> (porOperador[e.operadorId] ||= []).push(e));
+    return porOperador;
+  },
+
+  // Contador histórico de ausencias y licencias por operario, con detalle de fechas
+  historialAusenciasLicencias(){
+    const resultado = {};
+    DB.eventos.filter(e=> (e.tipo==='ausente' || e.tipo==='licencia') && e.fecha < HOY && !DB.historialOcultos.includes(e.id))
+      .forEach(e=>{
+        if(!resultado[e.operadorId]) resultado[e.operadorId] = { ausencias:[], licencias:[] };
+        if(e.tipo==='ausente') resultado[e.operadorId].ausencias.push(e);
+        else resultado[e.operadorId].licencias.push(e);
+      });
+    return resultado;
   }
 };
 
@@ -897,17 +1033,38 @@ const Domain = {
    ======================================================================= */
 
 const ViewBase = {
+  orden: 'nombre', // nombre | sector | turno | legajo
 
   render(){
     const el = document.getElementById('view-base');
-    const ops = DB.operadores;
+    let ops = [...DB.operadores];
+
+    const comparadores = {
+      nombre: (a,b)=> a.apellidoNombre.localeCompare(b.apellidoNombre),
+      sector: (a,b)=> (a.sector||'').localeCompare(b.sector||'') || a.apellidoNombre.localeCompare(b.apellidoNombre),
+      turno: (a,b)=> (a.turno||'').localeCompare(b.turno||'') || a.apellidoNombre.localeCompare(b.apellidoNombre),
+      legajo: (a,b)=> (parseInt(a.legajo)||999999) - (parseInt(b.legajo)||999999),
+    };
+    ops.sort(comparadores[this.orden] || comparadores.nombre);
 
     el.innerHTML = `
       <div class="panel">
         <div class="panel-head">
           <h2>Base info operadores</h2>
-          <div style="display:flex;align-items:center;gap:12px;">
+          <div style="display:flex;align-items:center;gap:10px;">
             <span class="count">${ops.length} operarios cargados</span>
+            <label class="orden-label">Ordenar por
+              <select id="baseOrdenSel" class="orden-select">
+                <option value="nombre" ${this.orden==='nombre'?'selected':''}>Nombre</option>
+                <option value="sector" ${this.orden==='sector'?'selected':''}>Sector</option>
+                <option value="turno" ${this.orden==='turno'?'selected':''}>Turno</option>
+                <option value="legajo" ${this.orden==='legajo'?'selected':''}>Legajo</option>
+              </select>
+            </label>
+            <button class="btn btn-sm" id="btnExportarExcel">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>
+              Exportar Excel
+            </button>
             ${ops.length === 0 ? `
             <button class="btn" id="btnImportarOperadores" style="border-color:var(--sage);color:var(--sage);">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>
@@ -928,17 +1085,17 @@ const ViewBase = {
                 <th></th>
               </tr>
               <tr>
-                <th style="min-width:260px;">Apellido y Nombre</th>
-                <th style="min-width:130px;">Dirección</th>
-                <th style="min-width:75px;">Legajo</th>
-                <th style="min-width:130px;">C.U.I.L.</th>
-                <th style="min-width:105px;">Fecha ing.</th>
-                <th style="min-width:85px;">Antigüedad</th>
-                <th style="min-width:115px;">Celular</th>
-                <th style="min-width:90px;">Turno</th>
-                <th style="min-width:110px;">Sector</th>
-                <th style="min-width:170px;">Correo empresarial</th>
-                <th style="min-width:40px;"></th>
+                <th style="min-width:230px;">Apellido y Nombre</th>
+                <th style="min-width:150px;">Dirección</th>
+                <th style="min-width:55px;">Legajo</th>
+                <th style="min-width:95px;">C.U.I.L.</th>
+                <th style="min-width:95px;">Fecha ing.</th>
+                <th style="min-width:75px;">Antigüedad</th>
+                <th style="min-width:100px;">Celular</th>
+                <th style="min-width:78px;">Turno</th>
+                <th style="min-width:100px;">Sector</th>
+                <th style="min-width:190px;">Correo empresarial</th>
+                <th style="min-width:36px;"></th>
               </tr>
             </thead>
             <tbody id="baseTbody">
@@ -953,23 +1110,32 @@ const ViewBase = {
       const style = document.createElement('style');
       style.id = 'baseTableStyles';
       style.textContent = `
-        .base-table{ border-collapse:collapse; width:100%; font-size:12.5px; }
-        .base-table th, .base-table td{ border-bottom:1px solid var(--line); border-right:1px solid #EEEAE0; padding:7px 10px; text-align:left; white-space:nowrap; }
-        .base-table thead tr:last-child th{ background:var(--paper-dim); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.03em; color:var(--ink-dim); position:sticky; top:0; z-index:2; }
-        .base-group-row th{ position:sticky; top:0; z-index:3; font-family:var(--f-display); font-size:11.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:8px 10px; }
+        .base-table{ border-collapse:collapse; width:100%; font-size:10.6px; }
+        .base-table th, .base-table td{ border-bottom:1px solid var(--line); border-right:1px solid #EEEAE0; padding:6px 8px; text-align:left; white-space:nowrap; }
+        .base-table thead tr:last-child th{ background:var(--paper-dim); font-weight:600; font-size:9.5px; text-transform:uppercase; letter-spacing:.03em; color:var(--ink-dim); position:sticky; top:0; z-index:2; }
+        .base-group-row th{ position:sticky; top:0; z-index:3; font-family:var(--f-display); font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:7px 8px; }
         .grp-personal{ background:var(--steel-soft); color:var(--steel); }
         .grp-operativa{ background:var(--umber-soft); color:var(--umber); border-left:2px solid var(--umber); }
         .base-table td.col-nombre{ position:sticky; left:0; background:var(--white); font-weight:600; z-index:1; }
         .base-table tbody tr:hover td.col-nombre{ background:var(--paper-dim); }
         .base-table tbody tr:hover td{ background:#FBFAF7; }
         .base-table tbody tr:hover td.col-nombre{ background:var(--paper-dim); }
-        .base-table td input, .base-table td select{ border:1px solid transparent; background:transparent; padding:4px 6px; font-size:12.5px; width:100%; border-radius:4px; font-family:var(--f-mono); }
+        .base-table td input, .base-table td select{ border:1px solid transparent; background:transparent; padding:3px 5px; font-size:10.6px; width:100%; border-radius:4px; font-family:var(--f-mono); }
         .base-table td input:hover, .base-table td select:hover{ border-color:var(--line); }
         .base-table td input:focus, .base-table td select:focus{ border-color:var(--steel); background:var(--white); outline:none; }
         .base-table td.col-nombre input{ font-family:var(--f-body); font-weight:600; }
         .base-table td.col-antig{ font-family:var(--f-mono); color:var(--ink-dim); }
         .base-table .row-delete{ opacity:.35; transition:opacity .12s; }
         .base-table tr:hover .row-delete{ opacity:1; }
+
+        .turno-pill{ display:inline-flex; align-items:center; justify-content:center; width:100%; border-radius:5px; padding:3px 0; font-weight:700; font-size:10px; letter-spacing:.03em; }
+        .base-table td.turno-cell-am{ background:#EAF2EC; }
+        .base-table td.turno-cell-pm{ background:#FBEFE6; }
+        .base-table td.turno-cell-am select{ color:#3F6B4F; }
+        .base-table td.turno-cell-pm select{ color:#9C5A2E; }
+
+        .orden-label{ font-size:11px; color:var(--ink-dim); display:flex; align-items:center; gap:6px; }
+        .orden-select{ width:auto; padding:5px 8px; font-size:11.5px; }
       `;
       document.head.appendChild(style);
     }
@@ -981,12 +1147,18 @@ const ViewBase = {
       btn.addEventListener('click', (e)=> this.onDelete(e));
     });
     document.getElementById('btnNuevoOperador').addEventListener('click', ()=> this.onNuevo());
+    document.getElementById('btnExportarExcel').addEventListener('click', ()=> this.onExportar());
+    document.getElementById('baseOrdenSel').addEventListener('change', (e)=>{
+      this.orden = e.target.value;
+      this.render();
+    });
     const btnImport = document.getElementById('btnImportarOperadores');
     if(btnImport) btnImport.addEventListener('click', ()=> this.onImportar());
   },
 
   rowHTML(op){
     const antig = DateUtil.calcAntiguedad(op.fechaIngreso);
+    const turnoClass = op.turno === 'PM' ? 'turno-cell-pm' : 'turno-cell-am';
     return `
       <tr data-id="${op.id}">
         <td class="col-nombre"><input type="text" data-field="apellidoNombre" value="${this.esc(op.apellidoNombre)}" placeholder="Apellido, Nombre"></td>
@@ -996,7 +1168,7 @@ const ViewBase = {
         <td><input type="date" data-field="fechaIngreso" value="${op.fechaIngreso || ''}"></td>
         <td class="col-antig">${antig}</td>
         <td><input type="text" data-field="celular" value="${this.esc(op.celular)}" placeholder="—"></td>
-        <td>
+        <td class="${turnoClass}">
           <select data-field="turno">
             <option value="AM" ${op.turno==='AM'?'selected':''}>AM</option>
             <option value="PM" ${op.turno==='PM'?'selected':''}>PM</option>
@@ -1031,7 +1203,10 @@ const ViewBase = {
     if(field === 'fechaIngreso'){
       tr.querySelector('.col-antig').textContent = DateUtil.calcAntiguedad(op.fechaIngreso);
     }
-    if(field === 'turno' || field === 'apellidoNombre'){
+    if(field === 'turno'){
+      tr.querySelector('select[data-field="turno"]').closest('td').className = op.turno === 'PM' ? 'turno-cell-pm' : 'turno-cell-am';
+      Bus.emit();
+    } else if(field === 'apellidoNombre'){
       Bus.emit(); // afecta Calendario / Día de hoy
     }
   },
@@ -1051,6 +1226,36 @@ const ViewBase = {
         Bus.emit();
       }
     });
+  },
+
+  onExportar(){
+    const ops = [...DB.operadores];
+    const comparadores = {
+      nombre: (a,b)=> a.apellidoNombre.localeCompare(b.apellidoNombre),
+      sector: (a,b)=> (a.sector||'').localeCompare(b.sector||'') || a.apellidoNombre.localeCompare(b.apellidoNombre),
+      turno: (a,b)=> (a.turno||'').localeCompare(b.turno||'') || a.apellidoNombre.localeCompare(b.apellidoNombre),
+      legajo: (a,b)=> (parseInt(a.legajo)||999999) - (parseInt(b.legajo)||999999),
+    };
+    ops.sort(comparadores[this.orden] || comparadores.nombre);
+
+    const filas = ops.map(op=> ({
+      'Apellido y Nombre': op.apellidoNombre,
+      'Dirección': op.direccion || '',
+      'Legajo': op.legajo || '',
+      'C.U.I.L.': op.cuil || '',
+      'Fecha ingreso': op.fechaIngreso || '',
+      'Antigüedad': DateUtil.calcAntiguedad(op.fechaIngreso),
+      'Celular': op.celular || '',
+      'Turno': op.turno || '',
+      'Sector': op.sector || '',
+      'Correo empresarial': op.correoEmpresarial || '',
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(filas);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Operadores');
+    XLSX.writeFile(wb, `base_operadores_${HOY}.xlsx`);
+    Toast.show('Excel exportado');
   },
 
   onImportar(){
@@ -1137,9 +1342,10 @@ const ViewCalendario = {
   ESTILOS: {
     vacaciones:  { bg:'var(--amber-soft)',  fg:'#8A6D2C', label:(e)=> 'vacaciones' },
     licencia:    { bg:'var(--brick-soft)',  fg:'var(--brick)', label:(e)=> 'licencia' },
-    franco:      { bg:'var(--sage-soft)',   fg:'var(--sage)', label:(e)=> `compensó (${DateUtil.formatDDMM(e.origenFranco)})` },
-    cambioTurno: { bg:'#2A3245',            fg:'#fff',         label:(e)=> `cambio a ${e.turnoCambio}` },
+    franco:      { bg:'var(--sage-soft)',   fg:'var(--sage)', label:(e)=> e.origenFranco ? `compensó (${DateUtil.formatDDMM(e.origenFranco)})` : 'compensatorio' },
+    cambioTurno: { bg:'#2A3245',            fg:'#fff',         label:(e)=> e.turnoCambio === 'Nocturno' ? 'noche' : `cambio a ${e.turnoCambio}` },
     ausente:     { bg:'var(--brick-soft)',  fg:'var(--brick)', label:(e)=> 'ausente' },
+    turnoCoord:  { bg:'#EDE6F5',            fg:'#6B4E96',      label:(e)=> e.turnoDia },
   },
 
   init(){
@@ -1158,8 +1364,9 @@ const ViewCalendario = {
     });
     const nombreMes = DateUtil.parse(fechas[0]).toLocaleDateString('es-AR', { month:'long', year:'numeric' });
 
-    const amOps = DB.operadores.filter(o=> o.turno === 'AM');
-    const pmOps = DB.operadores.filter(o=> o.turno === 'PM');
+    const amOps = DB.operadores.filter(o=> o.turno === 'AM' && o.sector !== 'Coordinacion');
+    const pmOps = DB.operadores.filter(o=> o.turno === 'PM' && o.sector !== 'Coordinacion');
+    const coordOps = DB.operadores.filter(o=> o.sector === 'Coordinacion');
 
     el.innerHTML = `
       <div class="cal-toolbar">
@@ -1175,7 +1382,7 @@ const ViewCalendario = {
         <div class="cal-legend">
           <span class="leg-item"><i style="background:var(--amber-soft);border:1px solid var(--amber)"></i>Vacaciones</span>
           <span class="leg-item"><i style="background:var(--brick-soft);border:1px solid var(--brick)"></i>Licencia</span>
-          <span class="leg-item"><i style="background:var(--sage-soft);border:1px solid var(--sage)"></i>Franco</span>
+          <span class="leg-item"><i style="background:var(--sage-soft);border:1px solid var(--sage)"></i>Compensatorio</span>
           <span class="leg-item"><i style="background:#2A3245"></i>Cambio de turno</span>
         </div>
       </div>
@@ -1194,6 +1401,14 @@ const ViewCalendario = {
         </div>
       </div>
 
+      ${coordOps.length > 0 ? `
+      <div class="cal-block" data-turno="COORD" style="margin-top:18px;">
+        <div class="cal-block-head"><span class="tag tag-coord">COORD</span> Coordinadores</div>
+        <div class="scroll-x cal-scroll" id="calScrollCOORD">
+          ${this.gridHTML(coordOps, fechas)}
+        </div>
+      </div>` : ''}
+
       <div class="cal-action-panel" id="calActionPanel" style="display:none;"></div>
     `;
 
@@ -1201,6 +1416,7 @@ const ViewCalendario = {
     this.bindToolbar();
     this.bindGrid(el);
     this.syncScroll();
+    this.scrollToHoy();
   },
 
   cap(s){ return s.charAt(0).toUpperCase()+s.slice(1); },
@@ -1242,7 +1458,9 @@ const ViewCalendario = {
   },
 
   cellHTML(operadorId, fecha){
-    const ev = Domain.eventosDeFecha(operadorId, fecha)[0];
+    const eventosDia = Domain.eventosDeFecha(operadorId, fecha);
+    // prioridad: cualquier evento que no sea meramente informativo (turnoCoord) gana la celda
+    const ev = eventosDia.find(e=> e.tipo !== 'turnoCoord') || eventosDia[0];
     let style = '', label = '', cls = 'cal-cell';
     if(fecha === HOY) cls += ' is-hoy';
     if(ev){
@@ -1336,13 +1554,35 @@ const ViewCalendario = {
   },
 
   syncScroll(){
-    // mantiene alineadas las columnas de fecha entre el bloque AM y PM al hacer scroll horizontal
-    const am = document.getElementById('calScrollAM');
-    const pm = document.getElementById('calScrollPM');
-    if(!am || !pm) return;
+    // mantiene alineadas las columnas de fecha entre los bloques AM, PM y COORD al hacer scroll horizontal
+    const blocks = ['calScrollAM','calScrollPM','calScrollCOORD']
+      .map(id=> document.getElementById(id))
+      .filter(Boolean);
+    if(blocks.length < 2) return;
     let syncing = false;
-    am.addEventListener('scroll', ()=>{ if(syncing) return; syncing=true; pm.scrollLeft = am.scrollLeft; syncing=false; });
-    pm.addEventListener('scroll', ()=>{ if(syncing) return; syncing=true; am.scrollLeft = pm.scrollLeft; syncing=false; });
+    blocks.forEach(src=>{
+      src.addEventListener('scroll', ()=>{
+        if(syncing) return;
+        syncing = true;
+        blocks.forEach(other=>{ if(other !== src) other.scrollLeft = src.scrollLeft; });
+        syncing = false;
+      });
+    });
+  },
+
+  scrollToHoy(){
+    // enfoca automáticamente la columna de HOY al abrir/cambiar de mes, si está dentro del mes visible
+    requestAnimationFrame(()=>{
+      const blocks = ['calScrollAM','calScrollPM','calScrollCOORD']
+        .map(id=> document.getElementById(id))
+        .filter(Boolean);
+      const first = blocks[0];
+      if(!first) return;
+      const hoyCell = first.querySelector(`.cal-daycol[data-fecha="${HOY}"]`);
+      if(!hoyCell) return;
+      const targetLeft = Math.max(0, hoyCell.offsetLeft - first.clientWidth/2 + hoyCell.clientWidth/2);
+      blocks.forEach(b=> b.scrollLeft = targetLeft);
+    });
   },
 
   bindGrid(root){
@@ -1408,14 +1648,16 @@ const ViewCalendario = {
     const n = fechas.length;
     const saldoVac = Domain.saldoVacaciones(operadorId);
     const saldoFr = Domain.saldoFrancos(operadorId);
+    const esCoordinador = op.sector === 'Coordinacion';
 
     panel.style.display = 'flex';
     panel.innerHTML = `
       <div class="ap-info"><strong>${this.esc(op.apellidoNombre)}</strong><br>${n} día${n===1?'':'s'} seleccionado${n===1?'':'s'}</div>
       <button data-action="vacaciones" title="Saldo disponible: ${saldoVac} días">Vacaciones (${saldoVac} disp.)</button>
       <button data-action="licencia">Licencia</button>
-      <button data-action="franco" ${saldoFr<=0 ? 'disabled style="opacity:.4;cursor:not-allowed;"':''} title="Saldo disponible: ${saldoFr} francos">Franco (${saldoFr} disp.)</button>
+      <button data-action="franco" ${saldoFr<=0 ? 'disabled style="opacity:.4;cursor:not-allowed;"':''} title="Saldo disponible: ${saldoFr} compensatorios">Compensatorio (${saldoFr} disp.)</button>
       <button data-action="cambioTurno">Cambio de turno</button>
+      ${esCoordinador ? `<button data-action="turnoCoord">Turno del día</button>` : ''}
       <button data-action="limpiar" style="background:rgba(181,72,61,.25);border-color:rgba(181,72,61,.4);">Borrar selección</button>
       <button class="ap-cancel" data-action="cancelar">Cancelar</button>
     `;
@@ -1486,28 +1728,60 @@ const ViewCalendario = {
       this.openCambioTurnoModal(operadorId, fechas);
       return;
     }
+
+    if(action === 'turnoCoord'){
+      this.openTurnoCoordModal(operadorId, fechas);
+      return;
+    }
   },
 
   openFrancoModal(operadorId, fecha, disponibles){
     Modal.open({
-      title:'Asignar franco',
+      title:'Asignar compensatorio',
       bodyHTML:`
-        <p>Elegí a qué día a favor corresponde este franco para <strong>${this.esc(Domain.getOperador(operadorId).apellidoNombre)}</strong> el día ${DateUtil.formatShort(fecha)}.</p>
+        <p>Elegí a qué compensatorio en noción corresponde este día de goce para <strong>${this.esc(Domain.getOperador(operadorId).apellidoNombre)}</strong> el día ${DateUtil.formatShort(fecha)}.</p>
         <div class="field">
-          <label>Día a favor de origen</label>
+          <label>Compensatorio en noción de</label>
           <select id="francoOrigenSel">
-            ${disponibles.map(c=> `<option value="${c.id}">${DateUtil.formatShort(c.diaAFavor)}</option>`).join('')}
+            ${disponibles.map(c=> `<option value="${c.id}">${c.diaAFavor ? DateUtil.formatShort(c.diaAFavor) : 'Sin fecha (asignación voluntaria)'}</option>`).join('')}
           </select>
         </div>
       `,
-      confirmText:'Asignar franco',
+      confirmText:'Asignar compensatorio',
       onConfirm:(body)=>{
         const compId = body.querySelector('#francoOrigenSel').value;
         const comp = DB.compensatorios.find(c=> c.id===compId);
         DB.eventos = DB.eventos.filter(e=> !(e.operadorId===operadorId && e.fecha===fecha));
         DB.eventos.push({ id:'ev_'+Date.now(), operadorId, fecha, tipo:'franco', origenFranco: comp ? comp.diaAFavor : '' });
         if(comp) comp.estado = 'usado';
-        Toast.show('Franco asignado');
+        Toast.show('Compensatorio asignado');
+        this.clearSeleccion();
+        this.render();
+        Bus.emit();
+      }
+    });
+  },
+
+  openTurnoCoordModal(operadorId, fechas){
+    Modal.open({
+      title:'Turno del día — Coordinador',
+      bodyHTML:`
+        <p>Anotá qué turno cubrió este coordinador en los días seleccionados (solo a fines informativos, no afecta saldos).</p>
+        <div class="field">
+          <label>Turno</label>
+          <select id="turnoCoordSel">
+            <option value="AM">AM</option>
+            <option value="PM">PM</option>
+            <option value="Rotativo">Rotativo</option>
+          </select>
+        </div>
+      `,
+      confirmText:'Guardar',
+      onConfirm:(body)=>{
+        const turnoDia = body.querySelector('#turnoCoordSel').value;
+        DB.eventos = DB.eventos.filter(e=> !(e.operadorId===operadorId && fechas.includes(e.fecha) && e.tipo==='turnoCoord'));
+        fechas.forEach(f=> DB.eventos.push({ id:'ev_'+Date.now()+'_'+f, operadorId, fecha:f, tipo:'turnoCoord', turnoDia }));
+        Toast.show('Turno del día guardado');
         this.clearSeleccion();
         this.render();
         Bus.emit();
@@ -1551,54 +1825,82 @@ Router.renderers.calendario = () => ViewCalendario.render();
    ======================================================================= */
 
 const ViewVacaciones = {
+  compOperadorSeleccionado: '', // id del operario elegido en el selector de "agregar compensatorio"
 
   render(){
     const el = document.getElementById('view-vacaciones');
     const ops = DB.operadores;
+    const opsConCompensatorios = ops.filter(op=> DB.compensatorios.some(c=> c.operadorId === op.id));
 
     el.innerHTML = `
       <div class="panel">
         <div class="panel-head">
-          <h2>Cargar compensatorio</h2>
-          <span class="count">+1 franco al aceptar</span>
+          <h2>Compensatorios</h2>
+          <span class="count">Asigná un día a favor por operario</span>
         </div>
+        <div class="comp-selector-row">
+          <label>Operario</label>
+          <select id="compOperadorSel" class="comp-operador-select">
+            <option value="">— Seleccionar operario —</option>
+            ${ops.map(op=> `<option value="${op.id}" ${this.compOperadorSeleccionado===op.id?'selected':''}>${this.esc(op.apellidoNombre)}</option>`).join('')}
+          </select>
+          <button class="btn btn-primary btn-sm" id="btnAgregarCompensatorio" ${!this.compOperadorSeleccionado?'disabled':''}>
+            + Cargar día a favor
+          </button>
+        </div>
+        ${opsConCompensatorios.length === 0 ? `
+          <div class="empty-state">Todavía no hay compensatorios cargados. Elegí un operario arriba para empezar.</div>
+        ` : `
         <div class="scroll-x">
           <table class="vac-table">
             <thead>
               <tr>
-                <th style="min-width:220px;">Apellido y Nombre</th>
-                <th style="min-width:130px;">Día a favor</th>
-                <th style="min-width:130px;">Día solicitado</th>
-                <th style="min-width:90px;">Estado</th>
-                <th style="min-width:90px;"></th>
+                <th style="min-width:200px;">Apellido y Nombre</th>
+                <th style="min-width:150px;">Compensatorio en noción de</th>
+                <th style="min-width:130px;">Fecha de goce</th>
+                <th style="min-width:110px;">Estado</th>
+                <th style="min-width:130px;">Total disponibles</th>
+                <th style="min-width:36px;"></th>
               </tr>
             </thead>
             <tbody id="compTbody">
-              ${ops.map(op=> this.compRowsHTML(op)).join('')}
+              ${opsConCompensatorios.map(op=> this.compRowsHTML(op)).join('')}
             </tbody>
           </table>
         </div>
+        `}
       </div>
 
-      <div class="panel" style="margin-top:18px;">
-        <div class="panel-head">
-          <h2>Cargar vacaciones</h2>
-          <span class="count">El descuento siempre arranca por el año más antiguo</span>
+      <div class="vac-cols">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Vacaciones — créditos cargados</h2>
+            <span class="count">Descuento desde el año más antiguo</span>
+          </div>
+          <div class="scroll-x">
+            <table class="vac-table">
+              <thead>
+                <tr>
+                  <th style="min-width:190px;">Apellido y Nombre</th>
+                  <th style="min-width:230px;">Créditos (Año: días)</th>
+                  <th style="min-width:150px;">Saldo</th>
+                </tr>
+              </thead>
+              <tbody id="vacTbody">
+                ${ops.map(op=> this.vacRowHTML(op)).join('')}
+              </tbody>
+            </table>
+          </div>
         </div>
-        <div class="scroll-x">
-          <table class="vac-table">
-            <thead>
-              <tr>
-                <th style="min-width:220px;">Apellido y Nombre</th>
-                <th style="min-width:280px;">Créditos cargados (Año: días)</th>
-                <th style="min-width:110px;">Saldo total</th>
-                <th style="min-width:170px;">Asignar (calendario)</th>
-              </tr>
-            </thead>
-            <tbody id="vacTbody">
-              ${ops.map(op=> this.vacRowHTML(op)).join('')}
-            </tbody>
-          </table>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Vacaciones asignadas este mes</h2>
+            <span class="count">${this.vacacionesEsteMes().length} asignación${this.vacacionesEsteMes().length===1?'':'es'}</span>
+          </div>
+          <div class="hoy-alerts">
+            ${this.vacacionesEsteMesHTML()}
+          </div>
         </div>
       </div>
     `;
@@ -1607,67 +1909,103 @@ const ViewVacaciones = {
     this.bindEvents(el);
   },
 
+  vacacionesEsteMes(){
+    const hoyDate = DateUtil.parse(HOY);
+    const mes = hoyDate.getMonth(), anio = hoyDate.getFullYear();
+    const porOperador = {};
+    DB.eventos.filter(e=> e.tipo==='vacaciones').forEach(e=>{
+      (porOperador[e.operadorId] ||= []).push(e.fecha);
+    });
+    const resultado = [];
+    Object.entries(porOperador).forEach(([opId, fechas])=>{
+      fechas = [...new Set(fechas)].sort();
+      let bloque = [fechas[0]];
+      const bloques = [];
+      for(let i=1;i<fechas.length;i++){
+        if(DateUtil.diffDays(fechas[i-1], fechas[i]) === 1) bloque.push(fechas[i]);
+        else { bloques.push(bloque); bloque=[fechas[i]]; }
+      }
+      bloques.push(bloque);
+      bloques.forEach(b=>{
+        const desde = b[0];
+        const d = DateUtil.parse(desde);
+        if(d.getMonth() === mes && d.getFullYear() === anio){
+          const op = Domain.getOperador(opId);
+          if(op) resultado.push({ operador: op.apellidoNombre, desde, hasta: b[b.length-1], dias: b.length });
+        }
+      });
+    });
+    resultado.sort((a,b)=> a.desde.localeCompare(b.desde));
+    return resultado;
+  },
+
+  vacacionesEsteMesHTML(){
+    const lista = this.vacacionesEsteMes();
+    if(lista.length === 0) return `<div class="empty-state">Todavía no se asignaron vacaciones este mes.</div>`;
+    return lista.map(v=> `<div class="hoy-alert-item"><span class="alert-dot" style="background:var(--amber);"></span><strong>${this.esc(v.operador)}</strong> — del ${DateUtil.formatShort(v.desde)} al ${DateUtil.formatShort(v.hasta)} (${v.dias} día${v.dias===1?'':'s'})</div>`).join('');
+  },
+
   compRowsHTML(op){
     const comps = DB.compensatorios.filter(c=> c.operadorId === op.id);
-    if(comps.length === 0){
-      return `
-        <tr data-operador-id="${op.id}" class="comp-empty-row">
-          <td class="col-nombre">${this.esc(op.apellidoNombre)}</td>
-          <td colspan="3" class="comp-add-cell">
-            <button class="btn btn-sm" data-action="add-comp" data-id="${op.id}">+ Cargar día a favor</button>
-          </td>
-          <td></td>
-        </tr>
-      `;
-    }
+    const saldo = Domain.saldoFrancos(op.id);
     return comps.map((c,i)=>`
       <tr data-comp-id="${c.id}">
         <td class="col-nombre">${i===0 ? this.esc(op.apellidoNombre) : ''}</td>
-        <td><input type="date" data-comp-field="diaAFavor" data-comp-id="${c.id}" value="${c.diaAFavor}"></td>
+        <td>
+          <div class="comp-origen-cell">
+            <input type="date" data-comp-field="diaAFavor" data-comp-id="${c.id}" value="${c.diaAFavor||''}" ${c.sinFecha?'disabled':''}>
+            <label class="sin-fecha-check">
+              <input type="checkbox" data-comp-field="sinFecha" data-comp-id="${c.id}" ${c.sinFecha?'checked':''}>
+              Sin fecha
+            </label>
+          </div>
+        </td>
         <td><input type="date" data-comp-field="diaSolicitado" data-comp-id="${c.id}" value="${c.diaSolicitado||''}"></td>
         <td>
           <select data-comp-field="estado" data-comp-id="${c.id}">
             <option value="pendiente" ${c.estado==='pendiente'?'selected':''}>Pendiente</option>
-            <option value="aceptado" ${c.estado==='aceptado'?'selected':''}>Aceptado (+1 franco)</option>
+            <option value="aceptado" ${c.estado==='aceptado'?'selected':''}>Aceptado (+1)</option>
             <option value="usado" ${c.estado==='usado'?'selected':''}>Usado</option>
           </select>
         </td>
+        <td class="saldo-cell">${i===0 ? `total ${saldo} disponible${saldo===1?'':'s'}` : ''}</td>
         <td>
           <button class="btn-icon row-delete-comp" data-comp-id="${c.id}" aria-label="Eliminar" title="Eliminar">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14"/></svg>
           </button>
         </td>
       </tr>
-    `).join('') + `
-      <tr data-operador-id="${op.id}">
-        <td class="col-nombre"></td>
-        <td colspan="3" class="comp-add-cell"><button class="btn btn-sm" data-action="add-comp" data-id="${op.id}">+ Cargar otro día a favor</button></td>
-        <td></td>
-      </tr>
-    `;
+    `).join('');
   },
 
   vacRowHTML(op){
-    const creditos = DB.vacacionesCreditos.filter(v=> v.operadorId === op.id).sort((a,b)=> a.anio-b.anio);
+    const lotesVivos = Domain.lotesVacacionesConSaldo(op.id);
+    const todosLosLotes = DB.vacacionesCreditos.filter(v=> v.operadorId === op.id).sort((a,b)=> a.anio-b.anio);
+    const idsVivos = new Set(lotesVivos.map(l=> l.id));
     const saldo = Domain.saldoVacaciones(op.id);
+    const pendientesFuturas = Domain.vacacionesPendientesFuturas(op.id);
     return `
       <tr data-operador-id="${op.id}">
         <td class="col-nombre">${this.esc(op.apellidoNombre)}</td>
         <td>
           <div class="creditos-chips">
-            ${creditos.map(c=> `
-              <span class="credito-chip">
+            ${todosLosLotes.map(c=> {
+              const agotado = !idsVivos.has(c.id);
+              return `
+              <span class="credito-chip ${agotado?'chip-agotado':''}">
                 <input type="number" min="0" data-credito-field="anio" data-credito-id="${c.id}" value="${c.anio}" class="chip-anio">
                 <span>:</span>
                 <input type="number" min="0" step="7" data-credito-field="dias" data-credito-id="${c.id}" value="${c.dias}" class="chip-dias">
                 <button class="chip-del" data-credito-id="${c.id}" title="Quitar lote" aria-label="Quitar lote">×</button>
               </span>
-            `).join('')}
+            `;}).join('')}
             <button class="btn btn-sm" data-action="add-credito" data-id="${op.id}">+ Año</button>
           </div>
         </td>
-        <td class="saldo-cell ${saldo<0?'saldo-negativo':''}">${saldo} días</td>
-        <td><span class="hint-text">Se asigna desde la pestaña Calendario, seleccionando los días</span></td>
+        <td class="saldo-cell ${saldo<0?'saldo-negativo':''}">
+          ${saldo} días
+          ${pendientesFuturas > 0 ? `<span class="saldo-nota">(${pendientesFuturas} día${pendientesFuturas===1?'':'s'} actualmente en calendario)</span>` : ''}
+        </td>
       </tr>
     `;
   },
@@ -1679,13 +2017,22 @@ const ViewVacaciones = {
     const style = document.createElement('style');
     style.id = 'vacStyles';
     style.textContent = `
-      .vac-table{ border-collapse:collapse; width:100%; font-size:12.5px; }
-      .vac-table th, .vac-table td{ border-bottom:1px solid var(--line); border-right:1px solid #EEEAE0; padding:8px 10px; text-align:left; vertical-align:middle; }
-      .vac-table thead th{ background:var(--paper-dim); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.03em; color:var(--ink-dim); }
-      .vac-table td.col-nombre{ font-weight:600; min-width:200px; }
+      .vac-table{ border-collapse:collapse; width:100%; font-size:12px; }
+      .vac-table th, .vac-table td{ border-bottom:1px solid var(--line); border-right:1px solid #EEEAE0; padding:7px 9px; text-align:left; vertical-align:middle; }
+      .vac-table thead th{ background:var(--paper-dim); font-weight:600; font-size:10.5px; text-transform:uppercase; letter-spacing:.03em; color:var(--ink-dim); }
+      .vac-table td.col-nombre{ font-weight:600; min-width:190px; }
       .vac-table input[type=date], .vac-table input[type=number]{ font-family:var(--f-mono); }
-      .comp-add-cell{ padding:5px 10px !important; }
-      .comp-empty-row td.col-nombre{ color:var(--ink); }
+
+      .comp-selector-row{ display:flex; align-items:center; gap:10px; padding:14px 18px; border-bottom:1px solid var(--line); background:var(--paper-dim); }
+      .comp-selector-row label{ font-size:11px; font-weight:600; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.03em; }
+      .comp-operador-select{ width:auto; min-width:220px; padding:7px 10px; font-size:12.5px; }
+
+      .comp-origen-cell{ display:flex; flex-direction:column; gap:4px; }
+      .sin-fecha-check{ display:flex; align-items:center; gap:5px; font-size:10.5px; color:var(--ink-dim); }
+      .sin-fecha-check input{ width:auto; }
+
+      .vac-cols{ display:grid; grid-template-columns:1.3fr 1fr; gap:18px; margin-top:18px; align-items:start; }
+      @media (max-width:980px){ .vac-cols{ grid-template-columns:1fr; } }
 
       .creditos-chips{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
       .credito-chip{ display:inline-flex; align-items:center; gap:3px; background:var(--amber-soft); border:1px solid #E8D9AE; border-radius:20px; padding:3px 6px 3px 10px; font-family:var(--f-mono); font-size:11.5px; }
@@ -1695,23 +2042,55 @@ const ViewVacaciones = {
       .credito-chip span{ color:var(--ink-dim); }
       .chip-del{ background:none; border:none; color:#8A6D2C; font-size:15px; line-height:1; padding:0 4px; cursor:pointer; opacity:.5; }
       .chip-del:hover{ opacity:1; }
+      .chip-agotado{ opacity:.45; background:var(--paper-dim); border-style:dashed; }
 
       .saldo-cell{ font-family:var(--f-mono); font-weight:700; }
       .saldo-negativo{ color:var(--brick); }
-      .hint-text{ font-size:11px; color:var(--ink-dim); font-style:italic; }
+      .saldo-nota{ display:block; font-family:var(--f-body); font-weight:400; font-style:italic; font-size:10.5px; color:var(--ink-dim); margin-top:2px; }
+
+      .hoy-alerts{ padding:6px 0; }
+      .hoy-alert-item{ display:flex; align-items:center; gap:10px; padding:9px 18px; font-size:12.2px; border-bottom:1px solid #EEEAE0; }
+      .hoy-alert-item:last-child{ border-bottom:none; }
+      .alert-dot{ width:6px; height:6px; border-radius:50%; background:var(--steel); flex:0 0 6px; }
     `;
     document.head.appendChild(style);
   },
 
   bindEvents(el){
-    // compensatorios: edición de campos
+    const sel = document.getElementById('compOperadorSel');
+    if(sel){
+      sel.addEventListener('change', (e)=>{
+        this.compOperadorSeleccionado = e.target.value;
+        this.render();
+      });
+    }
+    const btnAgregar = document.getElementById('btnAgregarCompensatorio');
+    if(btnAgregar){
+      btnAgregar.addEventListener('click', ()=>{
+        if(!this.compOperadorSeleccionado) return;
+        DB.compensatorios.push({
+          id:'c_'+Date.now(), operadorId:this.compOperadorSeleccionado,
+          diaAFavor:HOY, sinFecha:false, diaSolicitado:'', estado:'pendiente'
+        });
+        Toast.show('Compensatorio cargado');
+        this.render();
+        Bus.emit();
+      });
+    }
+
     el.querySelectorAll('[data-comp-field]').forEach(input=>{
       input.addEventListener('change', (e)=>{
         const comp = DB.compensatorios.find(c=> c.id === e.target.dataset.compId);
         if(!comp) return;
-        comp[e.target.dataset.compField] = e.target.value;
+        const field = e.target.dataset.compField;
+        if(field === 'sinFecha'){
+          comp.sinFecha = e.target.checked;
+          if(comp.sinFecha) comp.diaAFavor = '';
+        } else {
+          comp[field] = e.target.value;
+        }
         Toast.show('Compensatorio actualizado');
-        if(e.target.dataset.compField === 'estado'){
+        if(field === 'estado' || field === 'sinFecha'){
           this.render();
           Bus.emit();
         }
@@ -1722,17 +2101,10 @@ const ViewVacaciones = {
         DB.compensatorios = DB.compensatorios.filter(c=> c.id !== e.currentTarget.dataset.compId);
         Toast.show('Registro eliminado');
         this.render();
-      });
-    });
-    el.querySelectorAll('[data-action="add-comp"]').forEach(btn=>{
-      btn.addEventListener('click', (e)=>{
-        const opId = e.currentTarget.dataset.id;
-        DB.compensatorios.push({ id:'c_'+Date.now(), operadorId:opId, diaAFavor:HOY, diaSolicitado:'', estado:'pendiente' });
-        this.render();
+        Bus.emit();
       });
     });
 
-    // créditos de vacaciones
     el.querySelectorAll('[data-credito-field]').forEach(input=>{
       input.addEventListener('change', (e)=>{
         const credito = DB.vacacionesCreditos.find(c=> c.id === e.target.dataset.creditoId);
@@ -1774,9 +2146,10 @@ const ViewHoy = {
 
   render(){
     const el = document.getElementById('view-hoy');
-    const amOps = DB.operadores.filter(o=> o.turno === 'AM');
-    const pmOps = DB.operadores.filter(o=> o.turno === 'PM');
+    const amOps = DB.operadores.filter(o=> o.turno === 'AM' && o.sector !== 'Coordinacion');
+    const pmOps = DB.operadores.filter(o=> o.turno === 'PM' && o.sector !== 'Coordinacion');
     const alerts = Domain.proximosEventos();
+    const vacMes = Domain.vacacionesDelProximoMes();
 
     el.innerHTML = `
       <div class="hoy-fecha-bar">
@@ -1795,13 +2168,31 @@ const ViewHoy = {
         </div>
       </div>
 
-      <div class="panel" style="margin-top:18px;">
-        <div class="panel-head"><h2>Próximos eventos</h2><span class="count">${alerts.length} alerta${alerts.length===1?'':'s'}</span></div>
-        <div class="hoy-alerts">
-          ${alerts.length === 0
-            ? `<div class="empty-state">No hay vacaciones ni licencias por empezar o terminar próximamente.</div>`
-            : alerts.map(a=> `<div class="hoy-alert-item"><span class="alert-dot"></span>${a.texto}</div>`).join('')
-          }
+      <div class="hoy-cols" style="margin-top:18px;">
+        <div class="panel">
+          <div class="panel-head"><h2>Próximos eventos</h2><span class="count">${alerts.length} alerta${alerts.length===1?'':'s'}</span></div>
+          <div class="hoy-alerts">
+            ${alerts.length === 0
+              ? `<div class="empty-state">No hay vacaciones ni licencias por empezar o terminar próximamente.</div>`
+              : alerts.map(a=> `<div class="hoy-alert-item"><span class="alert-dot"></span>${a.texto}</div>`).join('')
+            }
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Vacaciones del mes</h2>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span class="count">${vacMes.length} programada${vacMes.length===1?'':'s'}</span>
+              ${vacMes.length > 0 ? `<button class="btn btn-sm" id="btnExportarVacMes">Exportar Excel</button>` : ''}
+            </div>
+          </div>
+          <div class="hoy-alerts">
+            ${vacMes.length === 0
+              ? `<div class="empty-state">Todavía no hay vacaciones asignadas para el mes próximo.</div>`
+              : vacMes.map(v=> `<div class="hoy-alert-item"><span class="alert-dot" style="background:var(--amber);"></span><strong>${this.esc(v.operador)}</strong> — del ${DateUtil.formatShort(v.desde)} al ${DateUtil.formatShort(v.hasta)} (${v.dias} día${v.dias===1?'':'s'})</div>`).join('')
+            }
+          </div>
         </div>
       </div>
     `;
@@ -1810,6 +2201,8 @@ const ViewHoy = {
     document.getElementById('hoyListAM').innerHTML = this.listHTML(amOps);
     document.getElementById('hoyListPM').innerHTML = this.listHTML(pmOps);
     this.bindSwitches(el);
+    const btnExp = document.getElementById('btnExportarVacMes');
+    if(btnExp) btnExp.addEventListener('click', ()=> this.onExportarVacMes(vacMes));
   },
 
   listHTML(ops){
@@ -1824,10 +2217,12 @@ const ViewHoy = {
   },
 
   rowHTML(op){
-    const bloqueante = Domain.eventoBloqueante(op.id, HOY);
+    // Solo vacaciones y licencia bloquean la fila (ausente sigue permitiendo togglear el switch)
+    const bloqueante = DB.eventos.find(e=> e.operadorId===op.id && e.fecha===HOY &&
+      (e.tipo==='vacaciones' || e.tipo==='licencia'));
     if(bloqueante){
       const bloque = Domain.bloqueConsecutivo(op.id, HOY, bloqueante.tipo);
-      const etiquetaTipo = bloqueante.tipo === 'vacaciones' ? 'vacaciones' : (bloqueante.tipo === 'licencia' ? 'licencia' : 'ausente');
+      const etiquetaTipo = bloqueante.tipo === 'vacaciones' ? 'vacaciones' : 'licencia';
       const hastaTxt = bloque ? ` hasta ${DateUtil.formatDDMM(bloque.hasta)}-${DateUtil.parse(bloque.hasta).getFullYear()}` : '';
       const claseTipo = bloqueante.tipo === 'vacaciones' ? 'estado-vacaciones' : 'estado-licencia';
       return `
@@ -1837,6 +2232,17 @@ const ViewHoy = {
         </tr>
       `;
     }
+    // franco con fecha de goce hoy también bloquea solo el día
+    const franco = DB.eventos.find(e=> e.operadorId===op.id && e.fecha===HOY && e.tipo==='franco');
+    if(franco){
+      return `
+        <tr class="hoy-row is-blocked">
+          <td class="col-nombre">${this.esc(op.apellidoNombre)}</td>
+          <td class="col-estado estado-licencia" style="background:var(--sage-soft);color:var(--sage);">compensatorio</td>
+        </tr>
+      `;
+    }
+
     const asistKey = `${op.id}_${HOY}`;
     const estado = DB.asistenciaHoy[asistKey] || 'presente';
     return `
@@ -1854,6 +2260,20 @@ const ViewHoy = {
 
   esc(s){ return (s||'').toString().replace(/"/g,'&quot;'); },
 
+  onExportarVacMes(vacMes){
+    const filas = vacMes.map(v=> ({
+      'Operario': v.operador,
+      'Desde': v.desde,
+      'Hasta': v.hasta,
+      'Días': v.dias,
+    }));
+    const ws = XLSX.utils.json_to_sheet(filas);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Vacaciones del mes');
+    XLSX.writeFile(wb, `vacaciones_proximo_mes_${HOY}.xlsx`);
+    Toast.show('Excel exportado');
+  },
+
   injectStyles(){
     if(document.getElementById('hoyStyles')) return;
     const style = document.createElement('style');
@@ -1864,19 +2284,19 @@ const ViewHoy = {
       @media (max-width:880px){ .hoy-cols{ grid-template-columns:1fr; } }
 
       .hoy-table{ width:100%; border-collapse:collapse; }
-      .hoy-row td{ padding:10px 18px; border-bottom:1px solid #EEEAE0; font-size:13px; }
+      .hoy-row td{ padding:7px 15px; border-bottom:1px solid #EEEAE0; font-size:11.7px; }
       .hoy-row:last-child td{ border-bottom:none; }
-      .hoy-row .col-nombre{ font-weight:600; width:55%; }
+      .hoy-row .col-nombre{ font-weight:600; width:55%; font-size:11.7px; }
       .hoy-row.is-blocked .col-nombre{ color:var(--ink-dim); }
       .col-estado{ text-align:right; }
       .estado-vacaciones, .estado-licencia{
-        display:inline-block; font-size:11.5px; font-weight:600; padding:4px 10px; border-radius:20px;
+        display:inline-block; font-size:10.5px; font-weight:600; padding:3px 9px; border-radius:20px;
       }
       .estado-vacaciones{ background:var(--amber-soft); color:#8A6D2C; }
       .estado-licencia{ background:var(--brick-soft); color:var(--brick); }
 
       .asist-switch{ display:inline-flex; border:1px solid var(--line); border-radius:20px; overflow:hidden; }
-      .asist-btn{ border:none; background:var(--white); padding:5px 14px; font-size:11.5px; font-weight:600; color:var(--ink-dim); transition:background .12s,color .12s; }
+      .asist-btn{ border:none; background:var(--white); padding:4px 12px; font-size:10.5px; font-weight:600; color:var(--ink-dim); transition:background .12s,color .12s; cursor:pointer; }
       .asist-btn.is-active.presente{ background:var(--sage); color:#fff; }
       .asist-btn.is-active.ausente{ background:var(--brick); color:#fff; }
 
@@ -1913,6 +2333,7 @@ const ViewHoy = {
   }
 };
 
+Router.renderers.hoy = () => ViewHoy.render();
 Router.renderers.hoy = () => ViewHoy.render();
 
 
@@ -2105,6 +2526,211 @@ const ViewAnotaciones = {
 };
 
 Router.renderers.anotaciones = () => ViewAnotaciones.render();
+
+/* =======================================================================
+   view-historial.js — PESTAÑA NUEVA: Historial de eventos
+   ======================================================================= */
+
+const ViewHistorial = {
+
+  render(){
+    const el = document.getElementById('view-historial');
+    const histVac = Domain.historialVacaciones();
+    const histFr = Domain.historialFrancos();
+    const histAus = Domain.historialAusenciasLicencias();
+
+    const opsConVac = Object.keys(histVac).map(id=> Domain.getOperador(id)).filter(Boolean);
+    const opsConFr = Object.keys(histFr).map(id=> Domain.getOperador(id)).filter(Boolean);
+    const opsConAus = Object.keys(histAus).map(id=> Domain.getOperador(id)).filter(Boolean);
+
+    el.innerHTML = `
+      <div class="hist-cols">
+        <div class="panel">
+          <div class="panel-head"><h2>Compensatorios tomados</h2><span class="count">${opsConFr.length} operario${opsConFr.length===1?'':'s'}</span></div>
+          <div class="scroll-x">
+            ${opsConFr.length === 0 ? `<div class="empty-state">Todavía no hay compensatorios con fecha de goce vencida.</div>` : `
+            <table class="hist-table">
+              <thead><tr><th>Operario</th><th>Asignado el</th><th>Tomó el</th><th></th></tr></thead>
+              <tbody>
+                ${opsConFr.map(op=> this.francoRowsHTML(op, histFr[op.id])).join('')}
+              </tbody>
+            </table>`}
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h2>Vacaciones ya disfrutadas</h2><span class="count">${opsConVac.length} operario${opsConVac.length===1?'':'s'}</span></div>
+          <div class="scroll-x">
+            ${opsConVac.length === 0 ? `<div class="empty-state">Todavía no hay vacaciones con fecha de regreso vencida.</div>` : `
+            <table class="hist-table">
+              <thead><tr><th>Operario</th><th>Fecha</th><th>Días</th><th></th></tr></thead>
+              <tbody>
+                ${opsConVac.map(op=> this.vacRowsHTML(op, histVac[op.id])).join('')}
+              </tbody>
+            </table>`}
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:18px;">
+        <div class="panel-head"><h2>Ausencias y licencias — contador histórico</h2><span class="count">${opsConAus.length} operario${opsConAus.length===1?'':'s'}</span></div>
+        <div class="scroll-x">
+          ${opsConAus.length === 0 ? `<div class="empty-state">Todavía no hay ausencias o licencias registradas en el pasado.</div>` : `
+          <table class="hist-table">
+            <thead><tr><th>Operario</th><th>Ausencias</th><th>Licencias</th><th></th></tr></thead>
+            <tbody>
+              ${opsConAus.map(op=> this.ausRowHTML(op, histAus[op.id])).join('')}
+            </tbody>
+          </table>`}
+        </div>
+      </div>
+    `;
+
+    this.injectStyles();
+    this.bindEvents(el);
+  },
+
+  francoRowsHTML(op, data){
+    const eventos = data; // array de eventos tipo franco
+    return eventos.map((e,i)=> `
+      <tr data-evento-id="${e.id}">
+        <td class="col-nombre">${i===0 ? this.esc(op.apellidoNombre) : ''}</td>
+        <td>${e.origenFranco ? DateUtil.formatShort(e.origenFranco) : 'Sin fecha'}</td>
+        <td>${DateUtil.formatShort(e.fecha)}</td>
+        <td>
+          <button class="btn-icon row-delete-hist" data-evento-id="${e.id}" title="Quitar del historial" aria-label="Quitar del historial">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14"/></svg>
+          </button>
+        </td>
+      </tr>
+    `).join('');
+  },
+
+  vacRowsHTML(op, data){
+    const { bloques, ids } = data;
+    return bloques.map((b,i)=> `
+      <tr data-bloque-ids="${ids.join(',')}">
+        <td class="col-nombre">${i===0 ? this.esc(op.apellidoNombre) : ''}</td>
+        <td>del ${DateUtil.formatShort(b.desde)} al ${DateUtil.formatShort(b.hasta)}</td>
+        <td>${b.dias}</td>
+        <td>
+          ${i===0 ? `<button class="btn-icon row-delete-hist-bloque" data-ids="${ids.join(',')}" title="Quitar del historial" aria-label="Quitar del historial">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14"/></svg>
+          </button>` : ''}
+        </td>
+      </tr>
+    `).join('');
+  },
+
+  ausRowHTML(op, data){
+    const rowId = 'hist-aus-' + op.id;
+    return `
+      <tr>
+        <td class="col-nombre">${this.esc(op.apellidoNombre)}</td>
+        <td>
+          <button class="hist-counter" data-toggle="${rowId}-aus">${data.ausencias.length} ausencia${data.ausencias.length===1?'':'s'}</button>
+        </td>
+        <td>
+          <button class="hist-counter" data-toggle="${rowId}-lic">${data.licencias.length} licencia${data.licencias.length===1?'':'s'}</button>
+        </td>
+        <td></td>
+      </tr>
+      <tr id="${rowId}-aus" class="hist-detail-row" style="display:none;">
+        <td></td>
+        <td colspan="3">
+          ${data.ausencias.length === 0 ? '<span class="hint-text">Sin ausencias registradas</span>' :
+            data.ausencias.map(e=> `<span class="hist-detail-chip">${DateUtil.formatShort(e.fecha)} <button class="chip-del" data-evento-id="${e.id}" data-action="del-evento">×</button></span>`).join(' ')}
+        </td>
+      </tr>
+      <tr id="${rowId}-lic" class="hist-detail-row" style="display:none;">
+        <td></td>
+        <td colspan="3">
+          ${data.licencias.length === 0 ? '<span class="hint-text">Sin licencias registradas</span>' :
+            data.licencias.map(e=> `<span class="hist-detail-chip">${DateUtil.formatShort(e.fecha)} <button class="chip-del" data-evento-id="${e.id}" data-action="del-evento">×</button></span>`).join(' ')}
+        </td>
+      </tr>
+    `;
+  },
+
+  esc(s){ return (s||'').toString().replace(/"/g,'&quot;'); },
+
+  injectStyles(){
+    if(document.getElementById('histStyles')) return;
+    const style = document.createElement('style');
+    style.id = 'histStyles';
+    style.textContent = `
+      .hist-cols{ display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+      @media (max-width:980px){ .hist-cols{ grid-template-columns:1fr; } }
+
+      .hist-table{ border-collapse:collapse; width:100%; font-size:12px; }
+      .hist-table th, .hist-table td{ border-bottom:1px solid #EEEAE0; border-right:1px solid #EEEAE0; padding:7px 10px; text-align:left; }
+      .hist-table thead th{ background:var(--paper-dim); font-weight:600; font-size:10.5px; text-transform:uppercase; letter-spacing:.03em; color:var(--ink-dim); }
+      .hist-table td.col-nombre{ font-weight:600; min-width:170px; }
+
+      .hist-counter{ background:var(--paper-dim); border:1px solid var(--line); border-radius:20px; padding:4px 11px; font-size:11.5px; font-weight:600; color:var(--ink); cursor:pointer; }
+      .hist-counter:hover{ background:var(--steel-soft); border-color:var(--steel); }
+      .hist-detail-row td{ background:#FBFAF7; padding:8px 10px; }
+      .hist-detail-chip{ display:inline-flex; align-items:center; gap:5px; background:var(--white); border:1px solid var(--line); border-radius:14px; padding:3px 4px 3px 10px; font-family:var(--f-mono); font-size:11px; margin:2px 4px 2px 0; }
+      .hint-text{ font-size:11px; color:var(--ink-dim); font-style:italic; }
+    `;
+    document.head.appendChild(style);
+  },
+
+  bindEvents(el){
+    el.querySelectorAll('.row-delete-hist').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{
+        const id = e.currentTarget.dataset.eventoId;
+        Modal.open({
+          title:'Quitar del historial',
+          bodyHTML:`<p>Este registro se va a ocultar del historial. El evento sigue marcado en el Calendario.</p>`,
+          confirmText:'Quitar',
+          onConfirm:()=>{
+            DB.historialOcultos.push(id);
+            Toast.show('Registro quitado del historial');
+            this.render();
+            Bus.emit();
+          }
+        });
+      });
+    });
+    el.querySelectorAll('.row-delete-hist-bloque').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{
+        const ids = e.currentTarget.dataset.ids.split(',');
+        Modal.open({
+          title:'Quitar del historial',
+          bodyHTML:`<p>Este bloque de vacaciones se va a ocultar del historial (${ids.length} día${ids.length===1?'':'s'}). El evento sigue marcado en el Calendario.</p>`,
+          confirmText:'Quitar',
+          onConfirm:()=>{
+            DB.historialOcultos.push(...ids);
+            Toast.show('Bloque quitado del historial');
+            this.render();
+            Bus.emit();
+          }
+        });
+      });
+    });
+    el.querySelectorAll('[data-action="del-evento"]').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        const id = e.currentTarget.dataset.eventoId;
+        DB.historialOcultos.push(id);
+        Toast.show('Registro quitado del historial');
+        this.render();
+        Bus.emit();
+      });
+    });
+    el.querySelectorAll('[data-toggle]').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{
+        const targetId = e.currentTarget.dataset.toggle;
+        const row = document.getElementById(targetId);
+        if(row) row.style.display = row.style.display === 'none' ? '' : 'none';
+      });
+    });
+  }
+};
+
+Router.renderers.historial = () => ViewHistorial.render();
+
 
 
 /* =======================================================================
