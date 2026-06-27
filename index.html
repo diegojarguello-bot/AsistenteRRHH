@@ -9,31 +9,33 @@
 <style>
 /* ===================== TOKENS ===================== */
 :root{
-  --navy:#1C2230;
-  --navy-soft:#2A3245;
-  --paper:#F7F5F0;
-  --paper-dim:#EFEBE2;
-  --line:#DAD4C5;
-  --steel:#3D5A6C;
-  --steel-soft:#E3EBED;
-  --umber:#8B5A3C;
-  --umber-soft:#F0E5DA;
-  --amber:#C9A961;
-  --amber-soft:#FAF0D8;
-  --brick:#B5483D;
-  --brick-soft:#F8E2DF;
-  --sage:#5A8C6E;
-  --sage-soft:#E4EFE8;
-  --ink:#1C2230;
-  --ink-dim:#6B6557;
+  --navy:#1E3A5F;
+  --navy-soft:#2D4F7C;
+  --paper:#F4F7FA;
+  --paper-dim:#E9EFF5;
+  --line:#D6E0EA;
+  --steel:#2F6690;
+  --steel-soft:#E1EDF6;
+  --umber:#5B6B8C;
+  --umber-soft:#EAEDF5;
+  --amber:#3B82C4;
+  --amber-soft:#E3F0FB;
+  --brick:#C0524A;
+  --brick-soft:#FAEAE8;
+  --sage:#3F8A6E;
+  --sage-soft:#E5F3ED;
+  --vacation:#C9952E;
+  --vacation-soft:#FBF1DE;
+  --ink:#23344A;
+  --ink-dim:#6B7E94;
   --white:#FFFFFF;
 
   --f-display:'Archivo',sans-serif;
   --f-body:'IBM Plex Sans',sans-serif;
   --f-mono:'IBM Plex Mono',monospace;
 
-  --radius:6px;
-  --shadow-card:0 1px 2px rgba(28,34,48,.06), 0 4px 12px rgba(28,34,48,.05);
+  --radius:8px;
+  --shadow-card:0 1px 2px rgba(30,58,95,.05), 0 4px 14px rgba(30,58,95,.07);
 }
 
 *{box-sizing:border-box;}
@@ -70,26 +72,15 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .rail{
   width:84px;
   flex:0 0 84px;
-  background:var(--navy);
+  background:var(--paper-dim);
+  border-right:1px solid var(--line);
+  box-shadow:2px 0 10px rgba(30,58,95,.04);
   display:flex;
   flex-direction:column;
   align-items:center;
   padding:18px 0 14px;
   position:relative;
   z-index:5;
-}
-.rail-brand{
-  color:var(--amber);
-  font-family:var(--f-display);
-  font-weight:800;
-  font-size:11px;
-  letter-spacing:.12em;
-  text-align:center;
-  line-height:1.3;
-  padding-bottom:16px;
-  margin-bottom:10px;
-  border-bottom:1px solid rgba(255,255,255,.12);
-  width:60px;
 }
 .rail-tabs{
   display:flex;
@@ -103,7 +94,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   width:68px;
   background:none;
   border:none;
-  color:rgba(255,255,255,.55);
+  color:var(--ink-dim);
   display:flex;
   flex-direction:column;
   align-items:center;
@@ -118,14 +109,16 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   transition:background .15s, color .15s;
 }
 .rail-tab svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;}
-.rail-tab:hover{background:rgba(255,255,255,.06);color:rgba(255,255,255,.85);}
+.rail-tab:hover{background:var(--steel-soft);color:var(--steel);}
 .rail-tab.active{
-  background:var(--paper);
-  color:var(--navy);
+  background:var(--navy);
+  color:var(--white);
+  box-shadow:0 2px 8px rgba(30,58,95,.25);
 }
-.rail-tab.active svg{stroke:var(--navy);}
+.rail-tab.active svg{stroke:var(--white);}
 .rail-foot{
-  color:rgba(255,255,255,.3);
+  color:var(--ink-dim);
+  opacity:.5;
   font-size:9px;
   letter-spacing:.06em;
   margin-top:10px;
@@ -162,12 +155,15 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   margin-top:1px;
 }
 .topbar-date{
-  font-family:var(--f-mono);
-  font-size:12.5px;
-  color:var(--ink-dim);
-  background:var(--paper-dim);
-  padding:6px 12px;
-  border-radius:var(--radius);
+  font-family:var(--f-display);
+  font-size:13.5px;
+  font-weight:600;
+  letter-spacing:.01em;
+  color:var(--navy);
+  background:var(--amber-soft);
+  border:1px solid #CFE3F5;
+  padding:7px 16px;
+  border-radius:20px;
 }
 
 .view{
@@ -413,7 +409,6 @@ h1,h2,h3{font-family:var(--f-display);}
 
   <!-- ===================== SIDEBAR RAIL ===================== -->
   <nav class="rail">
-    <div class="rail-brand">CONTROL<br>PERSONAL</div>
     <div class="rail-tabs" id="railTabs">
       <button class="rail-tab" data-view="hoy">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
@@ -425,7 +420,11 @@ h1,h2,h3{font-family:var(--f-display);}
       </button>
       <button class="rail-tab" data-view="vacaciones">
         <svg viewBox="0 0 24 24"><path d="M12 3v6M12 21c4-3 7-7 7-11a7 7 0 10-14 0c0 4 3 8 7 11z"/></svg>
-        Vacaciones<br>y francos
+        Vacaciones
+      </button>
+      <button class="rail-tab" data-view="compensatorios">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 12l2 2 4-4"/></svg>
+        Compensatorios
       </button>
       <button class="rail-tab" data-view="anotaciones">
         <svg viewBox="0 0 24 24"><path d="M4 4h16v12H8l-4 4V4z"/></svg>
@@ -462,6 +461,7 @@ h1,h2,h3{font-family:var(--f-display);}
     <div class="view" id="view-hoy"></div>
     <div class="view view-hidden" id="view-calendario"></div>
     <div class="view view-hidden" id="view-vacaciones"></div>
+    <div class="view view-hidden" id="view-compensatorios"></div>
     <div class="view view-hidden" id="view-anotaciones"></div>
     <div class="view view-hidden" id="view-base"></div>
     <div class="view view-hidden" id="view-historial"></div>
@@ -737,8 +737,10 @@ const Modal = {
     wrap.querySelector('#modalClose').addEventListener('click', ()=> this.close());
     wrap.querySelector('#modalCancel').addEventListener('click', ()=> this.close());
   },
-  open({ title, bodyHTML, confirmText='Confirmar', onConfirm, onMount }){
+  open({ title, bodyHTML, confirmText='Confirmar', onConfirm, onMount, onClose }){
     this.ensure();
+    this._onClose = onClose || null;
+    this._confirmed = false;
     this.overlay.querySelector('#modalTitle').textContent = title;
     this.overlay.querySelector('#modalBody').innerHTML = bodyHTML;
     const confirmBtn = this.overlay.querySelector('#modalConfirm');
@@ -747,12 +749,16 @@ const Modal = {
     confirmBtn.replaceWith(newBtn);
     newBtn.addEventListener('click', ()=>{
       const result = onConfirm ? onConfirm(this.overlay.querySelector('#modalBody')) : true;
-      if(result !== false) this.close();
+      if(result !== false){ this._confirmed = true; this.close(); }
     });
     this.overlay.classList.add('open');
     if(onMount) onMount(this.overlay.querySelector('#modalBody'));
   },
-  close(){ if(this.overlay) this.overlay.classList.remove('open'); }
+  close(){
+    if(this.overlay) this.overlay.classList.remove('open');
+    if(!this._confirmed && this._onClose) this._onClose();
+    this._onClose = null;
+  }
 };
 
 /* ---------------- ROUTER ---------------- */
@@ -761,7 +767,8 @@ const Router = {
   titles: {
     hoy:         { title:'Día de hoy', sub:'Asistencia y novedades de la jornada' },
     calendario:  { title:'Calendario de eventos', sub:'Vacaciones, licencias, francos y cambios de turno' },
-    vacaciones:  { title:'Vacaciones y francos', sub:'Carga de créditos y compensatorios' },
+    vacaciones:  { title:'Vacaciones', sub:'Asignación de créditos y vacaciones del mes' },
+    compensatorios: { title:'Compensatorios', sub:'Carga y gestión de días a favor' },
     anotaciones: { title:'Anotaciones y solicitudes', sub:'Novedades por operario y notas generales' },
     base:        { title:'Base de operadores', sub:'Información personal y operativa — fuente de verdad' },
     historial:   { title:'Historial de eventos', sub:'Registros pasados de vacaciones, francos, ausencias y licencias' },
@@ -839,6 +846,26 @@ const Domain = {
     return DB.eventos.filter(e=> e.operadorId===operadorId && e.tipo==='vacaciones' && e.fecha > HOY).length;
   },
 
+  // Si el saldo quedó negativo (ej: se borró/redujo un crédito), borra automáticamente
+  // las vacaciones FUTURAS ya asignadas en el calendario, empezando por las más nuevas,
+  // hasta que el saldo deje de ser negativo. Devuelve la cantidad de días borrados (para avisar al usuario).
+  corregirSaldoNegativoVacaciones(operadorId){
+    let saldo = this.saldoVacaciones(operadorId);
+    if(saldo >= 0) return 0;
+    let borrados = 0;
+    // tomamos los eventos de vacaciones futuros (fecha > HOY), ordenados de más nuevo a más viejo
+    const futuros = DB.eventos
+      .filter(e=> e.operadorId===operadorId && e.tipo==='vacaciones' && e.fecha > HOY)
+      .sort((a,b)=> b.fecha.localeCompare(a.fecha));
+    for(const ev of futuros){
+      if(saldo >= 0) break;
+      DB.eventos = DB.eventos.filter(e=> e.id !== ev.id);
+      saldo++;
+      borrados++;
+    }
+    return borrados;
+  },
+
   // Lotes de crédito de vacaciones con su saldo restante ya calculado (FIFO por año).
   // Los lotes que llegaron a 0 no se devuelven (desaparecen de la vista, como se pidió).
   lotesVacacionesConSaldo(operadorId){
@@ -858,11 +885,42 @@ const Domain = {
     return resultado;
   },
 
-  // Saldo de francos disponibles (compensatorios aceptados - francos ya tomados)
+  // Suma `dias` al crédito del año corriente de CADA operador individualmente.
+  // Si el operador ya tiene un lote para ese año, le suma encima; si no, crea uno nuevo.
+  asignarCreditoATodos(dias){
+    const anioActual = DateUtil.parse(HOY).getFullYear();
+    let afectados = 0;
+    DB.operadores.forEach(op=>{
+      const lote = DB.vacacionesCreditos.find(v=> v.operadorId===op.id && v.anio===anioActual);
+      if(lote){
+        lote.dias += dias;
+      } else {
+        DB.vacacionesCreditos.push({ id:'vc_'+Date.now()+'_'+op.id, operadorId:op.id, anio:anioActual, dias });
+      }
+      afectados++;
+    });
+    return afectados;
+  },
+
+  // Saldo de compensatorios disponibles (créditos cargados - francos ya tomados)
   saldoFrancos(operadorId){
-    const aceptados = DB.compensatorios.filter(c=> c.operadorId===operadorId && c.estado==='aceptado').length;
+    const cargados = DB.compensatorios.filter(c=> c.operadorId===operadorId).length;
     const tomados = DB.eventos.filter(e=> e.operadorId===operadorId && e.tipo==='franco').length;
-    return aceptados - tomados;
+    return cargados - tomados;
+  },
+
+  // Créditos de compensatorio aún no consumidos, ordenados del más viejo al más nuevo (FIFO).
+  // Los créditos "sin fecha" se tratan como los más antiguos (se consumen primero).
+  creditosCompensatorioDisponibles(operadorId){
+    const todos = DB.compensatorios
+      .filter(c=> c.operadorId===operadorId)
+      .sort((a,b)=>{
+        if(a.sinFecha && !b.sinFecha) return -1;
+        if(!a.sinFecha && b.sinFecha) return 1;
+        return (a.diaAFavor||'').localeCompare(b.diaAFavor||'');
+      });
+    const tomados = DB.eventos.filter(e=> e.operadorId===operadorId && e.tipo==='franco').length;
+    return todos.slice(tomados); // los primeros `tomados` ya se consumieron (FIFO)
   },
 
   // Descuenta 1 día de vacaciones del lote más antiguo con saldo > 0. Devuelve true si pudo.
@@ -1340,7 +1398,7 @@ const ViewCalendario = {
   dragStartFecha: null,
 
   ESTILOS: {
-    vacaciones:  { bg:'var(--amber-soft)',  fg:'#8A6D2C', label:(e)=> 'vacaciones' },
+    vacaciones:  { bg:'var(--vacation-soft)',  fg:'#8A6520', label:(e)=> 'vacaciones' },
     licencia:    { bg:'var(--brick-soft)',  fg:'var(--brick)', label:(e)=> 'licencia' },
     franco:      { bg:'var(--sage-soft)',   fg:'var(--sage)', label:(e)=> e.origenFranco ? `compensó (${DateUtil.formatDDMM(e.origenFranco)})` : 'compensatorio' },
     cambioTurno: { bg:'#2A3245',            fg:'#fff',         label:(e)=> e.turnoCambio === 'Nocturno' ? 'noche' : `cambio a ${e.turnoCambio}` },
@@ -1380,7 +1438,7 @@ const ViewCalendario = {
           </button>
         </div>
         <div class="cal-legend">
-          <span class="leg-item"><i style="background:var(--amber-soft);border:1px solid var(--amber)"></i>Vacaciones</span>
+          <span class="leg-item"><i style="background:var(--vacation-soft);border:1px solid var(--vacation)"></i>Vacaciones</span>
           <span class="leg-item"><i style="background:var(--brick-soft);border:1px solid var(--brick)"></i>Licencia</span>
           <span class="leg-item"><i style="background:var(--sage-soft);border:1px solid var(--sage)"></i>Compensatorio</span>
           <span class="leg-item"><i style="background:#2A3245"></i>Cambio de turno</span>
@@ -1509,11 +1567,11 @@ const ViewCalendario = {
       .cal-day-num{ display:block; font-size:11px; font-weight:600; color:var(--ink); line-height:1.4; }
       .cal-daycol.is-hoy .cal-day-name, .cal-daycol.is-hoy .cal-day-num{ color:#8A6D2C; }
       .cal-hoy-row td{ height:18px; border-bottom:none; font-size:9.5px; font-weight:700; color:var(--steel); letter-spacing:.08em; background:transparent; border-right:1px solid transparent; }
-      .is-hoy-marker{ background:var(--amber-soft) !important; color:#8A6D2C !important; }
+      .is-hoy-marker{ background:var(--vacation-soft) !important; color:#8A6520 !important; }
 
       .cal-cell{ cursor:pointer; transition:background .08s; position:relative; }
       .cal-cell:hover{ background:#F1EFE8; }
-      .cal-cell.is-hoy{ box-shadow:inset 0 0 0 1px var(--amber); background:#FFFBF0; }
+      .cal-cell.is-hoy{ box-shadow:inset 0 0 0 1px var(--vacation); background:#FFFBF0; }
       .cal-cell-evt{ font-size:10px; font-weight:700; letter-spacing:.01em; }
       .cal-cell-evt:hover{ filter:brightness(0.96); }
       .cal-cell.is-selecting{ background:var(--steel) !important; box-shadow:inset 0 0 0 2px var(--navy); }
@@ -1713,14 +1771,12 @@ const ViewCalendario = {
 
     if(action === 'franco'){
       const saldo = Domain.saldoFrancos(operadorId);
-      if(saldo <= 0){ Toast.show('No hay francos disponibles para asignar'); return; }
+      if(saldo <= 0){ Toast.show('No hay compensatorios disponibles para asignar'); return; }
       if(fechas.length > 1){
-        Toast.show('Seleccioná un solo día para asignar un franco');
+        Toast.show('Seleccioná un solo día para asignar un compensatorio');
         return;
       }
-      // pedir la fecha de origen (día a favor) entre los compensatorios aceptados sin usar
-      const disponibles = DB.compensatorios.filter(c=> c.operadorId===operadorId && c.estado==='aceptado');
-      this.openFrancoModal(operadorId, fechas[0], disponibles);
+      this.confirmarFranco(operadorId, fechas[0]);
       return;
     }
 
@@ -1735,25 +1791,18 @@ const ViewCalendario = {
     }
   },
 
-  openFrancoModal(operadorId, fecha, disponibles){
+  confirmarFranco(operadorId, fecha){
+    // descuento FIFO automático: toma el crédito disponible más viejo (sin fecha cuenta como el más viejo)
+    const disponibles = Domain.creditosCompensatorioDisponibles(operadorId);
+    const credito = disponibles[0];
+    const op = Domain.getOperador(operadorId);
     Modal.open({
       title:'Asignar compensatorio',
-      bodyHTML:`
-        <p>Elegí a qué compensatorio en noción corresponde este día de goce para <strong>${this.esc(Domain.getOperador(operadorId).apellidoNombre)}</strong> el día ${DateUtil.formatShort(fecha)}.</p>
-        <div class="field">
-          <label>Compensatorio en noción de</label>
-          <select id="francoOrigenSel">
-            ${disponibles.map(c=> `<option value="${c.id}">${c.diaAFavor ? DateUtil.formatShort(c.diaAFavor) : 'Sin fecha (asignación voluntaria)'}</option>`).join('')}
-          </select>
-        </div>
-      `,
+      bodyHTML:`<p>Se va a asignar un día de compensatorio para <strong>${this.esc(op.apellidoNombre)}</strong> el día ${DateUtil.formatShort(fecha)}, descontando del crédito ${credito && !credito.sinFecha ? `del ${DateUtil.formatShort(credito.diaAFavor)}` : 'más antiguo sin fecha'}.</p>`,
       confirmText:'Asignar compensatorio',
-      onConfirm:(body)=>{
-        const compId = body.querySelector('#francoOrigenSel').value;
-        const comp = DB.compensatorios.find(c=> c.id===compId);
+      onConfirm:()=>{
         DB.eventos = DB.eventos.filter(e=> !(e.operadorId===operadorId && e.fecha===fecha));
-        DB.eventos.push({ id:'ev_'+Date.now(), operadorId, fecha, tipo:'franco', origenFranco: comp ? comp.diaAFavor : '' });
-        if(comp) comp.estado = 'usado';
+        DB.eventos.push({ id:'ev_'+Date.now(), operadorId, fecha, tipo:'franco', origenFranco: credito ? (credito.sinFecha ? '' : credito.diaAFavor) : '' });
         Toast.show('Compensatorio asignado');
         this.clearSeleccion();
         this.render();
@@ -1825,64 +1874,27 @@ Router.renderers.calendario = () => ViewCalendario.render();
    ======================================================================= */
 
 const ViewVacaciones = {
-  compOperadorSeleccionado: '', // id del operario elegido en el selector de "agregar compensatorio"
 
   render(){
     const el = document.getElementById('view-vacaciones');
     const ops = DB.operadores;
-    const opsConCompensatorios = ops.filter(op=> DB.compensatorios.some(c=> c.operadorId === op.id));
 
     el.innerHTML = `
-      <div class="panel">
-        <div class="panel-head">
-          <h2>Compensatorios</h2>
-          <span class="count">Asigná un día a favor por operario</span>
-        </div>
-        <div class="comp-selector-row">
-          <label>Operario</label>
-          <select id="compOperadorSel" class="comp-operador-select">
-            <option value="">— Seleccionar operario —</option>
-            ${ops.map(op=> `<option value="${op.id}" ${this.compOperadorSeleccionado===op.id?'selected':''}>${this.esc(op.apellidoNombre)}</option>`).join('')}
-          </select>
-          <button class="btn btn-primary btn-sm" id="btnAgregarCompensatorio" ${!this.compOperadorSeleccionado?'disabled':''}>
-            + Cargar día a favor
-          </button>
-        </div>
-        ${opsConCompensatorios.length === 0 ? `
-          <div class="empty-state">Todavía no hay compensatorios cargados. Elegí un operario arriba para empezar.</div>
-        ` : `
-        <div class="scroll-x">
-          <table class="vac-table">
-            <thead>
-              <tr>
-                <th style="min-width:200px;">Apellido y Nombre</th>
-                <th style="min-width:150px;">Compensatorio en noción de</th>
-                <th style="min-width:130px;">Fecha de goce</th>
-                <th style="min-width:110px;">Estado</th>
-                <th style="min-width:130px;">Total disponibles</th>
-                <th style="min-width:36px;"></th>
-              </tr>
-            </thead>
-            <tbody id="compTbody">
-              ${opsConCompensatorios.map(op=> this.compRowsHTML(op)).join('')}
-            </tbody>
-          </table>
-        </div>
-        `}
-      </div>
-
       <div class="vac-cols">
         <div class="panel">
           <div class="panel-head">
-            <h2>Vacaciones — créditos cargados</h2>
-            <span class="count">Descuento desde el año más antiguo</span>
+            <h2>Asignar vacaciones</h2>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span class="count">Descuento desde el año más antiguo</span>
+              <button class="btn btn-sm btn-primary" id="btnAsignarATodos">+ Asignar a todos</button>
+            </div>
           </div>
           <div class="scroll-x">
             <table class="vac-table">
               <thead>
                 <tr>
-                  <th style="min-width:190px;">Apellido y Nombre</th>
-                  <th style="min-width:230px;">Créditos (Año: días)</th>
+                  <th style="min-width:190px;">Nombre y Apellido</th>
+                  <th style="min-width:230px;">Asignar Vacaciones</th>
                   <th style="min-width:150px;">Saldo</th>
                 </tr>
               </thead>
@@ -1942,40 +1954,7 @@ const ViewVacaciones = {
   vacacionesEsteMesHTML(){
     const lista = this.vacacionesEsteMes();
     if(lista.length === 0) return `<div class="empty-state">Todavía no se asignaron vacaciones este mes.</div>`;
-    return lista.map(v=> `<div class="hoy-alert-item"><span class="alert-dot" style="background:var(--amber);"></span><strong>${this.esc(v.operador)}</strong> — del ${DateUtil.formatShort(v.desde)} al ${DateUtil.formatShort(v.hasta)} (${v.dias} día${v.dias===1?'':'s'})</div>`).join('');
-  },
-
-  compRowsHTML(op){
-    const comps = DB.compensatorios.filter(c=> c.operadorId === op.id);
-    const saldo = Domain.saldoFrancos(op.id);
-    return comps.map((c,i)=>`
-      <tr data-comp-id="${c.id}">
-        <td class="col-nombre">${i===0 ? this.esc(op.apellidoNombre) : ''}</td>
-        <td>
-          <div class="comp-origen-cell">
-            <input type="date" data-comp-field="diaAFavor" data-comp-id="${c.id}" value="${c.diaAFavor||''}" ${c.sinFecha?'disabled':''}>
-            <label class="sin-fecha-check">
-              <input type="checkbox" data-comp-field="sinFecha" data-comp-id="${c.id}" ${c.sinFecha?'checked':''}>
-              Sin fecha
-            </label>
-          </div>
-        </td>
-        <td><input type="date" data-comp-field="diaSolicitado" data-comp-id="${c.id}" value="${c.diaSolicitado||''}"></td>
-        <td>
-          <select data-comp-field="estado" data-comp-id="${c.id}">
-            <option value="pendiente" ${c.estado==='pendiente'?'selected':''}>Pendiente</option>
-            <option value="aceptado" ${c.estado==='aceptado'?'selected':''}>Aceptado (+1)</option>
-            <option value="usado" ${c.estado==='usado'?'selected':''}>Usado</option>
-          </select>
-        </td>
-        <td class="saldo-cell">${i===0 ? `total ${saldo} disponible${saldo===1?'':'s'}` : ''}</td>
-        <td>
-          <button class="btn-icon row-delete-comp" data-comp-id="${c.id}" aria-label="Eliminar" title="Eliminar">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14"/></svg>
-          </button>
-        </td>
-      </tr>
-    `).join('');
+    return lista.map(v=> `<div class="hoy-alert-item"><span class="alert-dot" style="background:var(--vacation);"></span><strong>${this.esc(v.operador)}</strong> — del ${DateUtil.formatShort(v.desde)} al ${DateUtil.formatShort(v.hasta)} (${v.dias} día${v.dias===1?'':'s'})</div>`).join('');
   },
 
   vacRowHTML(op){
@@ -2018,24 +1997,16 @@ const ViewVacaciones = {
     style.id = 'vacStyles';
     style.textContent = `
       .vac-table{ border-collapse:collapse; width:100%; font-size:12px; }
-      .vac-table th, .vac-table td{ border-bottom:1px solid var(--line); border-right:1px solid #EEEAE0; padding:7px 9px; text-align:left; vertical-align:middle; }
+      .vac-table th, .vac-table td{ border-bottom:1px solid var(--line); border-right:1px solid var(--line); padding:7px 9px; text-align:left; vertical-align:middle; }
       .vac-table thead th{ background:var(--paper-dim); font-weight:600; font-size:10.5px; text-transform:uppercase; letter-spacing:.03em; color:var(--ink-dim); }
       .vac-table td.col-nombre{ font-weight:600; min-width:190px; }
       .vac-table input[type=date], .vac-table input[type=number]{ font-family:var(--f-mono); }
 
-      .comp-selector-row{ display:flex; align-items:center; gap:10px; padding:14px 18px; border-bottom:1px solid var(--line); background:var(--paper-dim); }
-      .comp-selector-row label{ font-size:11px; font-weight:600; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.03em; }
-      .comp-operador-select{ width:auto; min-width:220px; padding:7px 10px; font-size:12.5px; }
-
-      .comp-origen-cell{ display:flex; flex-direction:column; gap:4px; }
-      .sin-fecha-check{ display:flex; align-items:center; gap:5px; font-size:10.5px; color:var(--ink-dim); }
-      .sin-fecha-check input{ width:auto; }
-
-      .vac-cols{ display:grid; grid-template-columns:1.3fr 1fr; gap:18px; margin-top:18px; align-items:start; }
+      .vac-cols{ display:grid; grid-template-columns:1.3fr 1fr; gap:18px; align-items:start; }
       @media (max-width:980px){ .vac-cols{ grid-template-columns:1fr; } }
 
       .creditos-chips{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
-      .credito-chip{ display:inline-flex; align-items:center; gap:3px; background:var(--amber-soft); border:1px solid #E8D9AE; border-radius:20px; padding:3px 6px 3px 10px; font-family:var(--f-mono); font-size:11.5px; }
+      .credito-chip{ display:inline-flex; align-items:center; gap:3px; background:var(--vacation-soft); border:1px solid #EDDDB3; border-radius:20px; padding:3px 6px 3px 10px; font-family:var(--f-mono); font-size:11.5px; }
       .credito-chip input{ border:none; background:transparent; width:42px; padding:2px; text-align:center; font-size:11.5px; }
       .credito-chip .chip-anio{ width:48px; font-weight:600; }
       .credito-chip .chip-dias{ width:38px; }
@@ -2049,7 +2020,7 @@ const ViewVacaciones = {
       .saldo-nota{ display:block; font-family:var(--f-body); font-weight:400; font-style:italic; font-size:10.5px; color:var(--ink-dim); margin-top:2px; }
 
       .hoy-alerts{ padding:6px 0; }
-      .hoy-alert-item{ display:flex; align-items:center; gap:10px; padding:9px 18px; font-size:12.2px; border-bottom:1px solid #EEEAE0; }
+      .hoy-alert-item{ display:flex; align-items:center; gap:10px; padding:9px 18px; font-size:12.2px; border-bottom:1px solid var(--line); }
       .hoy-alert-item:last-child{ border-bottom:none; }
       .alert-dot{ width:6px; height:6px; border-radius:50%; background:var(--steel); flex:0 0 6px; }
     `;
@@ -2057,70 +2028,55 @@ const ViewVacaciones = {
   },
 
   bindEvents(el){
-    const sel = document.getElementById('compOperadorSel');
-    if(sel){
-      sel.addEventListener('change', (e)=>{
-        this.compOperadorSeleccionado = e.target.value;
-        this.render();
-      });
-    }
-    const btnAgregar = document.getElementById('btnAgregarCompensatorio');
-    if(btnAgregar){
-      btnAgregar.addEventListener('click', ()=>{
-        if(!this.compOperadorSeleccionado) return;
-        DB.compensatorios.push({
-          id:'c_'+Date.now(), operadorId:this.compOperadorSeleccionado,
-          diaAFavor:HOY, sinFecha:false, diaSolicitado:'', estado:'pendiente'
-        });
-        Toast.show('Compensatorio cargado');
-        this.render();
-        Bus.emit();
-      });
-    }
-
-    el.querySelectorAll('[data-comp-field]').forEach(input=>{
-      input.addEventListener('change', (e)=>{
-        const comp = DB.compensatorios.find(c=> c.id === e.target.dataset.compId);
-        if(!comp) return;
-        const field = e.target.dataset.compField;
-        if(field === 'sinFecha'){
-          comp.sinFecha = e.target.checked;
-          if(comp.sinFecha) comp.diaAFavor = '';
-        } else {
-          comp[field] = e.target.value;
-        }
-        Toast.show('Compensatorio actualizado');
-        if(field === 'estado' || field === 'sinFecha'){
-          this.render();
-          Bus.emit();
-        }
-      });
-    });
-    el.querySelectorAll('.row-delete-comp').forEach(btn=>{
-      btn.addEventListener('click', (e)=>{
-        DB.compensatorios = DB.compensatorios.filter(c=> c.id !== e.currentTarget.dataset.compId);
-        Toast.show('Registro eliminado');
-        this.render();
-        Bus.emit();
-      });
-    });
-
     el.querySelectorAll('[data-credito-field]').forEach(input=>{
       input.addEventListener('change', (e)=>{
         const credito = DB.vacacionesCreditos.find(c=> c.id === e.target.dataset.creditoId);
         if(!credito) return;
         const field = e.target.dataset.creditoField;
-        credito[field] = field==='anio' || field==='dias' ? parseInt(e.target.value)||0 : e.target.value;
-        this.render();
-        Bus.emit();
+        const nuevoValor = field==='anio' || field==='dias' ? parseInt(e.target.value)||0 : e.target.value;
+        const opNombre = Domain.getOperador(credito.operadorId)?.apellidoNombre || '';
+
+        Modal.open({
+          title:'Confirmar cambio',
+          bodyHTML:`<p>¿Confirmás cambiar ${field==='anio'?'el año':'los días'} de este lote de vacaciones para <strong>${this.esc(opNombre)}</strong>?</p>`,
+          confirmText:'Confirmar',
+          onConfirm:()=>{
+            credito[field] = nuevoValor;
+            const opId = credito.operadorId;
+            const borrados = Domain.corregirSaldoNegativoVacaciones(opId);
+            if(borrados > 0){
+              Toast.show(`Saldo ajustado: se quitaron ${borrados} día${borrados===1?'':'s'} de vacaciones ya asignadas en el calendario`);
+            } else {
+              Toast.show('Cambios guardados');
+            }
+            this.render();
+            Bus.emit();
+          },
+          onClose:()=>{ this.render(); } // si cancela, re-renderiza para restaurar el valor visual anterior
+        });
       });
     });
     el.querySelectorAll('.chip-del').forEach(btn=>{
       btn.addEventListener('click', (e)=>{
-        DB.vacacionesCreditos = DB.vacacionesCreditos.filter(c=> c.id !== e.currentTarget.dataset.creditoId);
-        Toast.show('Lote de vacaciones eliminado');
-        this.render();
-        Bus.emit();
+        const creditoId = e.currentTarget.dataset.creditoId;
+        const credito = DB.vacacionesCreditos.find(c=> c.id === creditoId);
+        if(!credito) return;
+        Modal.open({
+          title:'Borrar lote de vacaciones',
+          bodyHTML:`<p>¿Confirmás borrar este lote (${credito.anio}: ${credito.dias} días) de <strong>${this.esc(Domain.getOperador(credito.operadorId)?.apellidoNombre||'')}</strong>? Si hay vacaciones futuras asignadas que dependan de este saldo, se van a borrar automáticamente del calendario.</p>`,
+          confirmText:'Borrar',
+          onConfirm:()=>{
+            DB.vacacionesCreditos = DB.vacacionesCreditos.filter(c=> c.id !== creditoId);
+            const borrados = Domain.corregirSaldoNegativoVacaciones(credito.operadorId);
+            if(borrados > 0){
+              Toast.show(`Lote eliminado — se quitaron ${borrados} día${borrados===1?'':'s'} de vacaciones ya asignadas en el calendario`);
+            } else {
+              Toast.show('Lote de vacaciones eliminado');
+            }
+            this.render();
+            Bus.emit();
+          }
+        });
       });
     });
     el.querySelectorAll('[data-action="add-credito"]').forEach(btn=>{
@@ -2132,10 +2088,184 @@ const ViewVacaciones = {
         Bus.emit();
       });
     });
+    const btnTodos = document.getElementById('btnAsignarATodos');
+    if(btnTodos){
+      btnTodos.addEventListener('click', ()=>{
+        Modal.open({
+          title:'Asignar a todos',
+          bodyHTML:`
+            <p>Se va a sumar la misma cantidad de días al año corriente (${DateUtil.parse(HOY).getFullYear()}) de <strong>cada operador</strong>, individualmente.</p>
+            <div class="field">
+              <label>Días a sumar (múltiplo de 7)</label>
+              <input type="number" id="diasMasivoInput" value="7" min="7" step="7">
+            </div>
+          `,
+          confirmText:'Confirmar asignación masiva',
+          onConfirm:(body)=>{
+            const dias = parseInt(body.querySelector('#diasMasivoInput').value) || 7;
+            const afectados = Domain.asignarCreditoATodos(dias);
+            Toast.show(`+${dias} días asignados a ${afectados} operarios`);
+            this.render();
+            Bus.emit();
+          }
+        });
+      });
+    }
   }
 };
 
 Router.renderers.vacaciones = () => ViewVacaciones.render();
+
+/* =======================================================================
+   view-compensatorios.js — PESTAÑA NUEVA: Compensatorios
+   ======================================================================= */
+
+const ViewCompensatorios = {
+  operadorSeleccionado: '',
+
+  render(){
+    const el = document.getElementById('view-compensatorios');
+    const ops = DB.operadores;
+    const opsConCreditos = ops.filter(op=> DB.compensatorios.some(c=> c.operadorId === op.id));
+
+    el.innerHTML = `
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Compensatorios</h2>
+          <span class="count">Cargá un día a favor por operario</span>
+        </div>
+        <div class="comp-selector-row">
+          <label>Operario</label>
+          <select id="compOperadorSel" class="comp-operador-select">
+            <option value="">— Seleccionar operario —</option>
+            ${ops.map(op=> `<option value="${op.id}" ${this.operadorSeleccionado===op.id?'selected':''}>${this.esc(op.apellidoNombre)}</option>`).join('')}
+          </select>
+          <input type="date" id="compFechaInput" ${!this.operadorSeleccionado?'disabled':''}>
+          <label class="sin-fecha-check">
+            <input type="checkbox" id="compSinFechaCheck">
+            Sin fecha
+          </label>
+          <button class="btn btn-primary btn-sm" id="btnConfirmarCompensatorio" ${!this.operadorSeleccionado?'disabled':''}>
+            Confirmar carga
+          </button>
+        </div>
+        ${opsConCreditos.length === 0 ? `
+          <div class="empty-state">Todavía no hay compensatorios cargados. Elegí un operario arriba para empezar.</div>
+        ` : `
+        <div class="scroll-x">
+          <table class="vac-table">
+            <thead>
+              <tr>
+                <th style="min-width:210px;">Apellido y Nombre</th>
+                <th style="min-width:160px;">Asignar Compensatorio</th>
+                <th style="min-width:130px;">Total Disponible</th>
+                <th style="min-width:36px;"></th>
+              </tr>
+            </thead>
+            <tbody id="compTbody">
+              ${opsConCreditos.map(op=> this.compRowsHTML(op)).join('')}
+            </tbody>
+          </table>
+        </div>
+        `}
+      </div>
+    `;
+
+    this.injectStyles();
+    this.bindEvents(el);
+  },
+
+  compRowsHTML(op){
+    const creditos = DB.compensatorios.filter(c=> c.operadorId === op.id);
+    const saldo = Domain.saldoFrancos(op.id);
+    return creditos.map((c,i)=>`
+      <tr data-comp-id="${c.id}">
+        <td class="col-nombre">${i===0 ? this.esc(op.apellidoNombre) : ''}</td>
+        <td>${c.sinFecha ? 'Sin fecha (asignación voluntaria)' : DateUtil.formatShort(c.diaAFavor)}</td>
+        <td class="saldo-cell">${i===0 ? `${saldo} disponible${saldo===1?'':'s'}` : ''}</td>
+        <td>
+          <button class="btn-icon row-delete-comp" data-comp-id="${c.id}" aria-label="Eliminar" title="Eliminar">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14"/></svg>
+          </button>
+        </td>
+      </tr>
+    `).join('');
+  },
+
+  esc(s){ return (s||'').toString().replace(/"/g,'&quot;'); },
+
+  injectStyles(){
+    if(document.getElementById('compStyles')) return;
+    const style = document.createElement('style');
+    style.id = 'compStyles';
+    style.textContent = `
+      .comp-selector-row{ display:flex; align-items:center; gap:10px; padding:14px 18px; border-bottom:1px solid var(--line); background:var(--paper-dim); flex-wrap:wrap; }
+      .comp-selector-row label{ font-size:11px; font-weight:600; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.03em; }
+      .comp-operador-select{ width:auto; min-width:220px; padding:7px 10px; font-size:12.5px; }
+      .comp-selector-row input[type=date]{ width:auto; padding:7px 10px; font-size:12.5px; }
+      .sin-fecha-check{ display:flex; align-items:center; gap:5px; font-size:11px; color:var(--ink-dim); text-transform:none; }
+      .sin-fecha-check input{ width:auto; }
+    `;
+    document.head.appendChild(style);
+  },
+
+  bindEvents(el){
+    const sel = document.getElementById('compOperadorSel');
+    if(sel){
+      sel.addEventListener('change', (e)=>{
+        this.operadorSeleccionado = e.target.value;
+        this.render();
+      });
+    }
+    const sinFechaCheck = document.getElementById('compSinFechaCheck');
+    const fechaInput = document.getElementById('compFechaInput');
+    if(sinFechaCheck && fechaInput){
+      sinFechaCheck.addEventListener('change', (e)=>{
+        fechaInput.disabled = e.target.checked || !this.operadorSeleccionado;
+      });
+    }
+
+    const btnConfirmar = document.getElementById('btnConfirmarCompensatorio');
+    if(btnConfirmar){
+      btnConfirmar.addEventListener('click', ()=>{
+        if(!this.operadorSeleccionado) return;
+        const sinFecha = document.getElementById('compSinFechaCheck').checked;
+        const fecha = document.getElementById('compFechaInput').value;
+        if(!sinFecha && !fecha){
+          Toast.show('Elegí una fecha o marcá "Sin fecha"');
+          return;
+        }
+        DB.compensatorios.push({
+          id:'c_'+Date.now(), operadorId:this.operadorSeleccionado,
+          diaAFavor: sinFecha ? '' : fecha, sinFecha
+        });
+        Toast.show('Compensatorio cargado');
+        this.render();
+        Bus.emit();
+      });
+    }
+
+    el.querySelectorAll('.row-delete-comp').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{
+        const compId = e.currentTarget.dataset.compId;
+        Modal.open({
+          title:'Eliminar compensatorio',
+          bodyHTML:`<p>¿Confirmás eliminar este crédito de compensatorio? Esta acción no afecta los días ya tomados en el calendario.</p>`,
+          confirmText:'Eliminar',
+          onConfirm:()=>{
+            DB.compensatorios = DB.compensatorios.filter(c=> c.id !== compId);
+            Toast.show('Registro eliminado');
+            this.render();
+            Bus.emit();
+          }
+        });
+      });
+    });
+  }
+};
+
+Router.renderers.compensatorios = () => ViewCompensatorios.render();
+
 
 
 /* =======================================================================
@@ -2153,11 +2283,11 @@ const ViewHoy = {
 
     el.innerHTML = `
       <div class="hoy-fecha-bar">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
         ${DateUtil.formatLong(HOY)}
       </div>
 
-      <div class="hoy-cols">
+      <div class="hoy-grid">
         <div class="panel hoy-block" data-turno="AM">
           <div class="panel-head"><h2><span class="tag tag-am">AM</span> Turno mañana</h2><span class="count">${amOps.length} operarios</span></div>
           <div id="hoyListAM"></div>
@@ -2166,32 +2296,31 @@ const ViewHoy = {
           <div class="panel-head"><h2><span class="tag tag-pm">PM</span> Turno tarde</h2><span class="count">${pmOps.length} operarios</span></div>
           <div id="hoyListPM"></div>
         </div>
-      </div>
-
-      <div class="hoy-cols" style="margin-top:18px;">
-        <div class="panel">
-          <div class="panel-head"><h2>Próximos eventos</h2><span class="count">${alerts.length} alerta${alerts.length===1?'':'s'}</span></div>
-          <div class="hoy-alerts">
-            ${alerts.length === 0
-              ? `<div class="empty-state">No hay vacaciones ni licencias por empezar o terminar próximamente.</div>`
-              : alerts.map(a=> `<div class="hoy-alert-item"><span class="alert-dot"></span>${a.texto}</div>`).join('')
-            }
-          </div>
-        </div>
-
-        <div class="panel">
-          <div class="panel-head">
-            <h2>Vacaciones del mes</h2>
-            <div style="display:flex;align-items:center;gap:10px;">
-              <span class="count">${vacMes.length} programada${vacMes.length===1?'':'s'}</span>
-              ${vacMes.length > 0 ? `<button class="btn btn-sm" id="btnExportarVacMes">Exportar Excel</button>` : ''}
+        <div class="hoy-side-col">
+          <div class="panel">
+            <div class="panel-head"><h2>Próximos eventos</h2><span class="count">${alerts.length}</span></div>
+            <div class="hoy-alerts">
+              ${alerts.length === 0
+                ? `<div class="empty-state">No hay vacaciones ni licencias por empezar o terminar próximamente.</div>`
+                : alerts.map(a=> `<div class="hoy-alert-item"><span class="alert-dot"></span>${a.texto}</div>`).join('')
+              }
             </div>
           </div>
-          <div class="hoy-alerts">
-            ${vacMes.length === 0
-              ? `<div class="empty-state">Todavía no hay vacaciones asignadas para el mes próximo.</div>`
-              : vacMes.map(v=> `<div class="hoy-alert-item"><span class="alert-dot" style="background:var(--amber);"></span><strong>${this.esc(v.operador)}</strong> — del ${DateUtil.formatShort(v.desde)} al ${DateUtil.formatShort(v.hasta)} (${v.dias} día${v.dias===1?'':'s'})</div>`).join('')
-            }
+
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Vacaciones del mes</h2>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="count">${vacMes.length}</span>
+                ${vacMes.length > 0 ? `<button class="btn btn-sm" id="btnExportarVacMes">Excel</button>` : ''}
+              </div>
+            </div>
+            <div class="hoy-alerts">
+              ${vacMes.length === 0
+                ? `<div class="empty-state">Sin vacaciones para el mes próximo.</div>`
+                : vacMes.map(v=> `<div class="hoy-alert-item"><span class="alert-dot" style="background:var(--vacation);"></span><strong>${this.esc(v.operador)}</strong> — del ${DateUtil.formatShort(v.desde)} al ${DateUtil.formatShort(v.hasta)} (${v.dias}d)</div>`).join('')
+              }
+            </div>
           </div>
         </div>
       </div>
@@ -2279,31 +2408,33 @@ const ViewHoy = {
     const style = document.createElement('style');
     style.id = 'hoyStyles';
     style.textContent = `
-      .hoy-fecha-bar{ display:flex; align-items:center; gap:8px; font-family:var(--f-mono); font-size:12.5px; color:var(--ink-dim); margin-bottom:16px; text-transform:capitalize; }
-      .hoy-cols{ display:grid; grid-template-columns:1fr 1fr; gap:18px; }
-      @media (max-width:880px){ .hoy-cols{ grid-template-columns:1fr; } }
+      .hoy-fecha-bar{ display:flex; align-items:center; gap:7px; font-family:var(--f-mono); font-size:10.6px; color:var(--ink-dim); margin-bottom:14px; text-transform:capitalize; }
+      .hoy-grid{ display:grid; grid-template-columns:1.15fr 1.15fr 0.9fr; gap:14px; align-items:start; }
+      @media (max-width:1100px){ .hoy-grid{ grid-template-columns:1fr 1fr; } .hoy-side-col{ grid-column:1 / -1; } }
+      @media (max-width:720px){ .hoy-grid{ grid-template-columns:1fr; } }
+      .hoy-side-col{ display:flex; flex-direction:column; gap:14px; }
 
       .hoy-table{ width:100%; border-collapse:collapse; }
-      .hoy-row td{ padding:7px 15px; border-bottom:1px solid #EEEAE0; font-size:11.7px; }
+      .hoy-row td{ padding:6px 13px; border-bottom:1px solid var(--line); font-size:10px; }
       .hoy-row:last-child td{ border-bottom:none; }
-      .hoy-row .col-nombre{ font-weight:600; width:55%; font-size:11.7px; }
+      .hoy-row .col-nombre{ font-weight:600; width:55%; font-size:10px; }
       .hoy-row.is-blocked .col-nombre{ color:var(--ink-dim); }
       .col-estado{ text-align:right; }
       .estado-vacaciones, .estado-licencia{
-        display:inline-block; font-size:10.5px; font-weight:600; padding:3px 9px; border-radius:20px;
+        display:inline-block; font-size:8.9px; font-weight:600; padding:3px 8px; border-radius:20px;
       }
-      .estado-vacaciones{ background:var(--amber-soft); color:#8A6D2C; }
+      .estado-vacaciones{ background:var(--vacation-soft); color:#8A6520; }
       .estado-licencia{ background:var(--brick-soft); color:var(--brick); }
 
       .asist-switch{ display:inline-flex; border:1px solid var(--line); border-radius:20px; overflow:hidden; }
-      .asist-btn{ border:none; background:var(--white); padding:4px 12px; font-size:10.5px; font-weight:600; color:var(--ink-dim); transition:background .12s,color .12s; cursor:pointer; }
+      .asist-btn{ border:none; background:var(--white); padding:3px 10px; font-size:8.9px; font-weight:600; color:var(--ink-dim); transition:background .12s,color .12s; cursor:pointer; }
       .asist-btn.is-active.presente{ background:var(--sage); color:#fff; }
       .asist-btn.is-active.ausente{ background:var(--brick); color:#fff; }
 
-      .hoy-alerts{ padding:6px 0; }
-      .hoy-alert-item{ display:flex; align-items:center; gap:10px; padding:10px 18px; font-size:12.8px; border-bottom:1px solid #EEEAE0; }
+      .hoy-alerts{ padding:5px 0; }
+      .hoy-alert-item{ display:flex; align-items:center; gap:8px; padding:8px 15px; font-size:10.9px; border-bottom:1px solid var(--line); }
       .hoy-alert-item:last-child{ border-bottom:none; }
-      .alert-dot{ width:6px; height:6px; border-radius:50%; background:var(--steel); flex:0 0 6px; }
+      .alert-dot{ width:5px; height:5px; border-radius:50%; background:var(--steel); flex:0 0 5px; }
     `;
     document.head.appendChild(style);
   },
@@ -2333,7 +2464,6 @@ const ViewHoy = {
   }
 };
 
-Router.renderers.hoy = () => ViewHoy.render();
 Router.renderers.hoy = () => ViewHoy.render();
 
 
@@ -2544,13 +2674,13 @@ const ViewHistorial = {
     const opsConAus = Object.keys(histAus).map(id=> Domain.getOperador(id)).filter(Boolean);
 
     el.innerHTML = `
-      <div class="hist-cols">
+      <div class="hist-cols-3">
         <div class="panel">
-          <div class="panel-head"><h2>Compensatorios tomados</h2><span class="count">${opsConFr.length} operario${opsConFr.length===1?'':'s'}</span></div>
+          <div class="panel-head"><h2>Compensatorios tomados</h2><span class="count">${opsConFr.length}</span></div>
           <div class="scroll-x">
-            ${opsConFr.length === 0 ? `<div class="empty-state">Todavía no hay compensatorios con fecha de goce vencida.</div>` : `
+            ${opsConFr.length === 0 ? `<div class="empty-state">Sin compensatorios vencidos.</div>` : `
             <table class="hist-table">
-              <thead><tr><th>Operario</th><th>Asignado el</th><th>Tomó el</th><th></th></tr></thead>
+              <thead><tr><th>Operario</th><th>Asignado</th><th>Tomó</th><th></th></tr></thead>
               <tbody>
                 ${opsConFr.map(op=> this.francoRowsHTML(op, histFr[op.id])).join('')}
               </tbody>
@@ -2559,9 +2689,9 @@ const ViewHistorial = {
         </div>
 
         <div class="panel">
-          <div class="panel-head"><h2>Vacaciones ya disfrutadas</h2><span class="count">${opsConVac.length} operario${opsConVac.length===1?'':'s'}</span></div>
+          <div class="panel-head"><h2>Vacaciones disfrutadas</h2><span class="count">${opsConVac.length}</span></div>
           <div class="scroll-x">
-            ${opsConVac.length === 0 ? `<div class="empty-state">Todavía no hay vacaciones con fecha de regreso vencida.</div>` : `
+            ${opsConVac.length === 0 ? `<div class="empty-state">Sin vacaciones vencidas.</div>` : `
             <table class="hist-table">
               <thead><tr><th>Operario</th><th>Fecha</th><th>Días</th><th></th></tr></thead>
               <tbody>
@@ -2570,18 +2700,18 @@ const ViewHistorial = {
             </table>`}
           </div>
         </div>
-      </div>
 
-      <div class="panel" style="margin-top:18px;">
-        <div class="panel-head"><h2>Ausencias y licencias — contador histórico</h2><span class="count">${opsConAus.length} operario${opsConAus.length===1?'':'s'}</span></div>
-        <div class="scroll-x">
-          ${opsConAus.length === 0 ? `<div class="empty-state">Todavía no hay ausencias o licencias registradas en el pasado.</div>` : `
-          <table class="hist-table">
-            <thead><tr><th>Operario</th><th>Ausencias</th><th>Licencias</th><th></th></tr></thead>
-            <tbody>
-              ${opsConAus.map(op=> this.ausRowHTML(op, histAus[op.id])).join('')}
-            </tbody>
-          </table>`}
+        <div class="panel">
+          <div class="panel-head"><h2>Ausencias y licencias</h2><span class="count">${opsConAus.length}</span></div>
+          <div class="scroll-x">
+            ${opsConAus.length === 0 ? `<div class="empty-state">Sin registros pasados.</div>` : `
+            <table class="hist-table">
+              <thead><tr><th>Operario</th><th>Aus.</th><th>Lic.</th></tr></thead>
+              <tbody>
+                ${opsConAus.map(op=> this.ausRowHTML(op, histAus[op.id])).join('')}
+              </tbody>
+            </table>`}
+          </div>
         </div>
       </div>
     `;
@@ -2628,23 +2758,22 @@ const ViewHistorial = {
       <tr>
         <td class="col-nombre">${this.esc(op.apellidoNombre)}</td>
         <td>
-          <button class="hist-counter" data-toggle="${rowId}-aus">${data.ausencias.length} ausencia${data.ausencias.length===1?'':'s'}</button>
+          <button class="hist-counter" data-toggle="${rowId}-aus">${data.ausencias.length}</button>
         </td>
         <td>
-          <button class="hist-counter" data-toggle="${rowId}-lic">${data.licencias.length} licencia${data.licencias.length===1?'':'s'}</button>
+          <button class="hist-counter" data-toggle="${rowId}-lic">${data.licencias.length}</button>
         </td>
-        <td></td>
       </tr>
       <tr id="${rowId}-aus" class="hist-detail-row" style="display:none;">
         <td></td>
-        <td colspan="3">
+        <td colspan="2">
           ${data.ausencias.length === 0 ? '<span class="hint-text">Sin ausencias registradas</span>' :
             data.ausencias.map(e=> `<span class="hist-detail-chip">${DateUtil.formatShort(e.fecha)} <button class="chip-del" data-evento-id="${e.id}" data-action="del-evento">×</button></span>`).join(' ')}
         </td>
       </tr>
       <tr id="${rowId}-lic" class="hist-detail-row" style="display:none;">
         <td></td>
-        <td colspan="3">
+        <td colspan="2">
           ${data.licencias.length === 0 ? '<span class="hint-text">Sin licencias registradas</span>' :
             data.licencias.map(e=> `<span class="hist-detail-chip">${DateUtil.formatShort(e.fecha)} <button class="chip-del" data-evento-id="${e.id}" data-action="del-evento">×</button></span>`).join(' ')}
         </td>
@@ -2659,8 +2788,9 @@ const ViewHistorial = {
     const style = document.createElement('style');
     style.id = 'histStyles';
     style.textContent = `
-      .hist-cols{ display:grid; grid-template-columns:1fr 1fr; gap:18px; }
-      @media (max-width:980px){ .hist-cols{ grid-template-columns:1fr; } }
+      .hist-cols-3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; }
+      @media (max-width:1100px){ .hist-cols-3{ grid-template-columns:1fr 1fr; } }
+      @media (max-width:680px){ .hist-cols-3{ grid-template-columns:1fr; } }
 
       .hist-table{ border-collapse:collapse; width:100%; font-size:12px; }
       .hist-table th, .hist-table td{ border-bottom:1px solid #EEEAE0; border-right:1px solid #EEEAE0; padding:7px 10px; text-align:left; }
