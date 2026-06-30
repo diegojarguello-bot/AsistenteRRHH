@@ -380,6 +380,13 @@ h1,h2,h3{font-family:var(--f-display);}
 #syncStatus{ font-size:10.5px; color:var(--ink-dim); display:flex; align-items:center; gap:5px; }
 #syncStatus .sync-dot{ width:6px; height:6px; border-radius:50%; background:var(--sage); }
 #syncStatus.syncing .sync-dot{ background:var(--amber); }
+
+.solo-lectura-banner{
+  background:var(--umber-soft); color:var(--umber); border:1px solid #D5D9EC;
+  border-radius:7px; padding:9px 14px; font-size:12px; font-weight:600;
+  margin-bottom:14px; display:flex; align-items:center; gap:8px;
+}
+.solo-lectura-banner::before{ content:'🔒'; font-size:12px; }
 </style>
 </head>
 <body>
@@ -438,6 +445,10 @@ h1,h2,h3{font-family:var(--f-display);}
         <svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>
         Historial<br>de eventos
       </button>
+      <button class="rail-tab" data-view="usuarios">
+        <svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 19c0-3.3 2.9-5.5 6.5-5.5s6.5 2.2 6.5 5.5"/><circle cx="17.5" cy="8.5" r="2.3"/><path d="M16 13.5c2.5.3 4.5 2.2 4.5 5"/></svg>
+        Usuarios
+      </button>
     </div>
     <div class="rail-foot">v1.0</div>
   </nav>
@@ -453,6 +464,7 @@ h1,h2,h3{font-family:var(--f-display);}
         <div id="syncStatus"><span class="sync-dot"></span><span>Sincronizado</span></div>
         <div class="topbar-date" id="topbarDate"></div>
         <div class="who">Conectado: <strong id="whoUser">—</strong></div>
+        <button class="btn btn-sm" id="btnCambiarPass">Mi contraseña</button>
         <button class="btn btn-sm" id="btnLogout">Salir</button>
       </div>
     </div>
@@ -465,6 +477,7 @@ h1,h2,h3{font-family:var(--f-display);}
     <div class="view view-hidden" id="view-anotaciones"></div>
     <div class="view view-hidden" id="view-base"></div>
     <div class="view view-hidden" id="view-historial"></div>
+    <div class="view view-hidden" id="view-usuarios"></div>
   </div>
 </div>
 
@@ -515,6 +528,14 @@ firebase.initializeApp(firebaseConfig);
 const fbAuth = firebase.auth();
 const fbDb = firebase.firestore();
 
+/* Segunda instancia de Firebase, usada SOLO para crear usuarios nuevos.
+   Por qué: createUserWithEmailAndPassword loguea automáticamente al usuario
+   recién creado en la instancia donde se ejecuta. Si usáramos fbAuth (la
+   instancia principal), crear un usuario nuevo deslogearía al admin actual.
+   Con una segunda app aislada, el admin nunca pierde su sesión. */
+const fbSecondaryApp = firebase.initializeApp(firebaseConfig, "secondary");
+const fbAuthSecondary = fbSecondaryApp.auth();
+
 /* Dominio falso para simular "usuario" en vez de email real.
    Tu compañero ingresa solo el nombre de usuario (ej: "admin") y
    acá se lo convierte en un email interno para Firebase Auth. */
@@ -533,6 +554,7 @@ const DB = {
   anotaciones: [],
   notasGenerales: "",
   historialOcultos: [], // ids de eventos que el usuario borró manualmente de la vista de Historial (el evento sigue en el calendario)
+  usuarios: [], // { id (=uid de Firebase Auth), usuario, rol: 'admin'|'total'|'parcial' }
 };
 
 /* fecha "hoy" real del sistema (YYYY-MM-DD) */
@@ -577,11 +599,91 @@ function iniciarSincronizacion(){
     console.error("Error sincronizando config:", err);
   });
   _unsubscribers.push(unsubConfig);
+
+  // colección "usuarios" — independiente del guardado masivo genérico (ver guardarTodoEnFirestore).
+  // Se gestiona con sus propias funciones (crearUsuario / borrarUsuario) para que ninguna otra
+  // mutación de la app la toque por accidente.
+  const unsubUsuarios = fbDb.collection("usuarios").onSnapshot(snap=>{
+    DB.usuarios = snap.docs.map(d=> ({ id: d.id, ...d.data() }));
+    actualizarRolActual();
+    Bus.render && Bus.render();
+  }, err=>{
+    console.error("Error sincronizando usuarios:", err);
+  });
+  _unsubscribers.push(unsubUsuarios);
 }
 
 function detenerSincronizacion(){
   _unsubscribers.forEach(u=> u());
   _unsubscribers = [];
+}
+
+/* =======================================================================
+   roles.js — sistema de permisos (admin / total / parcial)
+   -----------------------------------------------------------------------
+   RolActual se actualiza cada vez que cambia la sesión o llega un snapshot
+   de la colección "usuarios". El usuario semilla (admin1, creado a mano en
+   Firebase Auth) no tiene documento en "usuarios" — si no se encuentra
+   coincidencia, se asume rol 'admin' (esto preserva tu acceso actual sin
+   que tengas que crear tu propio documento manualmente).
+   ======================================================================= */
+
+let RolActual = 'admin';
+
+function actualizarRolActual(){
+  const user = fbAuth.currentUser;
+  if(!user){ RolActual = 'admin'; return; }
+  const emailUsuario = user.email.replace('@'+AUTH_EMAIL_DOMAIN, '');
+  const registro = DB.usuarios.find(u=> u.usuario === emailUsuario);
+  RolActual = registro ? registro.rol : 'admin';
+}
+
+function puedeEditar(vista){
+  if(RolActual === 'admin' || RolActual === 'total') return true;
+  // permiso parcial: solo puede editar Día de hoy
+  return vista === 'hoy';
+}
+
+/* ---------------- Gestión de usuarios (solo accesible para rol admin) ---------------- */
+
+async function crearUsuario(usuario, password, rol){
+  const email = usuarioToEmail(usuario);
+  try{
+    const cred = await fbAuthSecondary.createUserWithEmailAndPassword(email, password);
+    const uid = cred.user.uid;
+    await fbDb.collection("usuarios").doc(uid).set({ usuario: usuario.trim().toLowerCase().replace(/\s+/g,''), rol });
+    await fbAuthSecondary.signOut(); // cierra la sesión de la instancia secundaria (no afecta al admin)
+    return { ok:true };
+  }catch(err){
+    let msg = 'No se pudo crear el usuario.';
+    if(err.code === 'auth/email-already-in-use') msg = 'Ese nombre de usuario ya existe.';
+    if(err.code === 'auth/weak-password') msg = 'La contraseña debe tener al menos 6 caracteres.';
+    return { ok:false, msg };
+  }
+}
+
+async function borrarUsuario(usuarioId){
+  // Nota: esto borra el documento de rol en Firestore. La cuenta de Firebase Auth
+  // en sí (email/password) no se puede borrar desde el cliente sin Admin SDK —
+  // queda inutilizada en la práctica porque ya no tiene rol asignado y, si hace
+  // falta liberarla del todo, se puede borrar manualmente desde la consola de Firebase.
+  await fbDb.collection("usuarios").doc(usuarioId).delete();
+}
+
+async function cambiarMiPassword(passwordActual, passwordNueva){
+  const user = fbAuth.currentUser;
+  if(!user) return { ok:false, msg:'No hay sesión activa.' };
+  try{
+    const cred = firebase.auth.EmailAuthProvider.credential(user.email, passwordActual);
+    await user.reauthenticateWithCredential(cred);
+    await user.updatePassword(passwordNueva);
+    return { ok:true };
+  }catch(err){
+    let msg = 'No se pudo cambiar la contraseña.';
+    if(err.code === 'auth/wrong-password') msg = 'La contraseña actual es incorrecta.';
+    if(err.code === 'auth/weak-password') msg = 'La contraseña nueva debe tener al menos 6 caracteres.';
+    return { ok:false, msg };
+  }
 }
 
 /* ---------------- DB -> Firestore (escritura) ----------------
@@ -772,6 +874,7 @@ const Router = {
     anotaciones: { title:'Anotaciones y solicitudes', sub:'Novedades por operario y notas generales' },
     base:        { title:'Base de operadores', sub:'Información personal y operativa — fuente de verdad' },
     historial:   { title:'Historial de eventos', sub:'Registros pasados de vacaciones, francos, ausencias y licencias' },
+    usuarios:    { title:'Usuarios', sub:'Gestión de accesos y permisos' },
   },
   renderers: {}, // se completan en cada view-*.js
 
@@ -796,8 +899,35 @@ const Router = {
   },
 
   renderCurrent(){
+    this.aplicarVisibilidadPestañas();
     const fn = this.renderers[this.current];
     if(fn) fn();
+    this.aplicarSoloLectura();
+  },
+
+  // Oculta del menú lateral la pestaña "Usuarios" para quien no sea admin
+  aplicarVisibilidadPestañas(){
+    const tabUsuarios = document.querySelector('.rail-tab[data-view="usuarios"]');
+    if(tabUsuarios) tabUsuarios.style.display = (RolActual === 'admin') ? '' : 'none';
+  },
+
+  // Para permiso parcial: deja todo visible pero deshabilita controles de edición
+  // en cualquier vista que no sea "hoy". No toca Firestore — es un bloqueo de interfaz.
+  aplicarSoloLectura(){
+    if(puedeEditar(this.current)) return;
+    const viewEl = document.getElementById(`view-${this.current}`);
+    if(!viewEl) return;
+    viewEl.querySelectorAll('input, select, textarea, button').forEach(el=>{
+      // no deshabilitar elementos de navegación/ordenamiento que no escriben datos
+      if(el.id === 'hoyOrdenSel' || el.id === 'baseOrdenSel') return;
+      el.disabled = true;
+    });
+    if(!viewEl.querySelector('.solo-lectura-banner')){
+      const banner = document.createElement('div');
+      banner.className = 'solo-lectura-banner';
+      banner.textContent = 'Modo solo lectura — tu usuario no tiene permiso para editar esta sección';
+      viewEl.prepend(banner);
+    }
   }
 };
 
@@ -1630,7 +1760,7 @@ const ViewCalendario = {
 
   scrollToHoy(){
     // enfoca automáticamente la columna de HOY al abrir/cambiar de mes, si está dentro del mes visible
-    requestAnimationFrame(()=>{
+    const doScroll = ()=>{
       const blocks = ['calScrollAM','calScrollPM','calScrollCOORD']
         .map(id=> document.getElementById(id))
         .filter(Boolean);
@@ -1640,7 +1770,9 @@ const ViewCalendario = {
       if(!hoyCell) return;
       const targetLeft = Math.max(0, hoyCell.offsetLeft - first.clientWidth/2 + hoyCell.clientWidth/2);
       blocks.forEach(b=> b.scrollLeft = targetLeft);
-    });
+    };
+    requestAnimationFrame(doScroll);
+    setTimeout(doScroll, 80); // refuerzo por si el layout no estaba asentado en el primer frame
   },
 
   bindGrid(root){
@@ -1714,6 +1846,7 @@ const ViewCalendario = {
       <button data-action="vacaciones" title="Saldo disponible: ${saldoVac} días">Vacaciones (${saldoVac} disp.)</button>
       <button data-action="licencia">Licencia</button>
       <button data-action="franco" ${saldoFr<=0 ? 'disabled style="opacity:.4;cursor:not-allowed;"':''} title="Saldo disponible: ${saldoFr} compensatorios">Compensatorio (${saldoFr} disp.)</button>
+      <button data-action="ausente">Ausente</button>
       <button data-action="cambioTurno">Cambio de turno</button>
       ${esCoordinador ? `<button data-action="turnoCoord">Turno del día</button>` : ''}
       <button data-action="limpiar" style="background:rgba(181,72,61,.25);border-color:rgba(181,72,61,.4);">Borrar selección</button>
@@ -1763,6 +1896,20 @@ const ViewCalendario = {
       DB.eventos = DB.eventos.filter(e=> !(e.operadorId===operadorId && fechas.includes(e.fecha)));
       fechas.forEach(f=> DB.eventos.push({ id:'ev_'+Date.now()+'_'+f, operadorId, fecha:f, tipo:'licencia' }));
       Toast.show('Licencia registrada');
+      this.clearSeleccion();
+      this.render();
+      Bus.emit();
+      return;
+    }
+
+    if(action === 'ausente'){
+      DB.eventos = DB.eventos.filter(e=> !(e.operadorId===operadorId && fechas.includes(e.fecha) && e.tipo==='ausente'));
+      fechas.forEach(f=> DB.eventos.push({ id:'ev_aus_'+operadorId+'_'+f, operadorId, fecha:f, tipo:'ausente' }));
+      // si entre las fechas está HOY, mantiene sincronizado el switch de la pestaña Día de hoy
+      if(fechas.includes(HOY)){
+        DB.asistenciaHoy[`${operadorId}_${HOY}`] = 'ausente';
+      }
+      Toast.show(`Ausencia registrada (${fechas.length} día${fechas.length===1?'':'s'})`);
       this.clearSeleccion();
       this.render();
       Bus.emit();
@@ -1907,11 +2054,14 @@ const ViewVacaciones = {
 
         <div class="panel">
           <div class="panel-head">
-            <h2>Vacaciones asignadas este mes</h2>
-            <span class="count">${this.vacacionesEsteMes().length} asignación${this.vacacionesEsteMes().length===1?'':'es'}</span>
+            <h2>Próximos eventos</h2>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="count">${this.proximosEventos().length}</span>
+              ${this.proximosEventos().length > 0 ? `<button class="btn btn-sm" id="btnExportarProximos">Excel</button>` : ''}
+            </div>
           </div>
           <div class="hoy-alerts">
-            ${this.vacacionesEsteMesHTML()}
+            ${this.proximosEventosHTML()}
           </div>
         </div>
       </div>
@@ -1921,40 +2071,24 @@ const ViewVacaciones = {
     this.bindEvents(el);
   },
 
-  vacacionesEsteMes(){
-    const hoyDate = DateUtil.parse(HOY);
-    const mes = hoyDate.getMonth(), anio = hoyDate.getFullYear();
-    const porOperador = {};
-    DB.eventos.filter(e=> e.tipo==='vacaciones').forEach(e=>{
-      (porOperador[e.operadorId] ||= []).push(e.fecha);
-    });
-    const resultado = [];
-    Object.entries(porOperador).forEach(([opId, fechas])=>{
-      fechas = [...new Set(fechas)].sort();
-      let bloque = [fechas[0]];
-      const bloques = [];
-      for(let i=1;i<fechas.length;i++){
-        if(DateUtil.diffDays(fechas[i-1], fechas[i]) === 1) bloque.push(fechas[i]);
-        else { bloques.push(bloque); bloque=[fechas[i]]; }
-      }
-      bloques.push(bloque);
-      bloques.forEach(b=>{
-        const desde = b[0];
-        const d = DateUtil.parse(desde);
-        if(d.getMonth() === mes && d.getFullYear() === anio){
-          const op = Domain.getOperador(opId);
-          if(op) resultado.push({ operador: op.apellidoNombre, desde, hasta: b[b.length-1], dias: b.length });
-        }
-      });
-    });
-    resultado.sort((a,b)=> a.desde.localeCompare(b.desde));
-    return resultado;
+  proximosEventos(){
+    return Domain.proximosEventos();
   },
 
-  vacacionesEsteMesHTML(){
-    const lista = this.vacacionesEsteMes();
-    if(lista.length === 0) return `<div class="empty-state">Todavía no se asignaron vacaciones este mes.</div>`;
-    return lista.map(v=> `<div class="hoy-alert-item"><span class="alert-dot" style="background:var(--vacation);"></span><strong>${this.esc(v.operador)}</strong> — del ${DateUtil.formatShort(v.desde)} al ${DateUtil.formatShort(v.hasta)} (${v.dias} día${v.dias===1?'':'s'})</div>`).join('');
+  proximosEventosHTML(){
+    const lista = this.proximosEventos();
+    if(lista.length === 0) return `<div class="empty-state">No hay vacaciones ni licencias por empezar o terminar próximamente.</div>`;
+    return lista.map(a=> `<div class="hoy-alert-item"><span class="alert-dot"></span>${a.texto}</div>`).join('');
+  },
+
+  onExportarProximos(){
+    const lista = this.proximosEventos();
+    const filas = lista.map(a=> ({ 'Evento': a.texto, 'Días': a.dias }));
+    const ws = XLSX.utils.json_to_sheet(filas);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Próximos eventos');
+    XLSX.writeFile(wb, `proximos_eventos_${HOY}.xlsx`);
+    Toast.show('Excel exportado');
   },
 
   vacRowHTML(op){
@@ -2028,6 +2162,9 @@ const ViewVacaciones = {
   },
 
   bindEvents(el){
+    const btnExpProx = document.getElementById('btnExportarProximos');
+    if(btnExpProx) btnExpProx.addEventListener('click', ()=> this.onExportarProximos());
+
     el.querySelectorAll('[data-credito-field]').forEach(input=>{
       input.addEventListener('change', (e)=>{
         const credito = DB.vacacionesCreditos.find(c=> c.id === e.target.dataset.creditoId);
@@ -2152,20 +2289,8 @@ const ViewCompensatorios = {
         ${opsConCreditos.length === 0 ? `
           <div class="empty-state">Todavía no hay compensatorios cargados. Elegí un operario arriba para empezar.</div>
         ` : `
-        <div class="scroll-x">
-          <table class="vac-table">
-            <thead>
-              <tr>
-                <th style="min-width:210px;">Apellido y Nombre</th>
-                <th style="min-width:160px;">Asignar Compensatorio</th>
-                <th style="min-width:130px;">Total Disponible</th>
-                <th style="min-width:36px;"></th>
-              </tr>
-            </thead>
-            <tbody id="compTbody">
-              ${opsConCreditos.map(op=> this.compRowsHTML(op)).join('')}
-            </tbody>
-          </table>
+        <div class="comp-cards-grid">
+          ${opsConCreditos.map(op=> this.cardHTML(op)).join('')}
         </div>
         `}
       </div>
@@ -2175,21 +2300,25 @@ const ViewCompensatorios = {
     this.bindEvents(el);
   },
 
-  compRowsHTML(op){
+  cardHTML(op){
     const creditos = DB.compensatorios.filter(c=> c.operadorId === op.id);
     const saldo = Domain.saldoFrancos(op.id);
-    return creditos.map((c,i)=>`
-      <tr data-comp-id="${c.id}">
-        <td class="col-nombre">${i===0 ? this.esc(op.apellidoNombre) : ''}</td>
-        <td>${c.sinFecha ? 'Sin fecha (asignación voluntaria)' : DateUtil.formatShort(c.diaAFavor)}</td>
-        <td class="saldo-cell">${i===0 ? `${saldo} disponible${saldo===1?'':'s'}` : ''}</td>
-        <td>
-          <button class="btn-icon row-delete-comp" data-comp-id="${c.id}" aria-label="Eliminar" title="Eliminar">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14"/></svg>
-          </button>
-        </td>
-      </tr>
-    `).join('');
+    return `
+      <div class="comp-card">
+        <div class="comp-card-head">
+          <span class="comp-card-name">${this.esc(op.apellidoNombre)}</span>
+          <span class="comp-card-saldo ${saldo<0?'saldo-negativo':''}">${saldo} disp.</span>
+        </div>
+        <div class="comp-card-body">
+          ${creditos.map(c=> `
+            <div class="comp-card-item" data-comp-id="${c.id}">
+              <span>${c.sinFecha ? 'Sin fecha (voluntaria)' : DateUtil.formatShort(c.diaAFavor)}</span>
+              <button class="comp-card-del" data-comp-id="${c.id}" aria-label="Eliminar" title="Eliminar">×</button>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
   },
 
   esc(s){ return (s||'').toString().replace(/"/g,'&quot;'); },
@@ -2205,6 +2334,18 @@ const ViewCompensatorios = {
       .comp-selector-row input[type=date]{ width:auto; padding:7px 10px; font-size:12.5px; }
       .sin-fecha-check{ display:flex; align-items:center; gap:5px; font-size:11px; color:var(--ink-dim); text-transform:none; }
       .sin-fecha-check input{ width:auto; }
+
+      .comp-cards-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:12px; padding:16px 18px; }
+      .comp-card{ border:1px solid var(--line); border-radius:8px; background:var(--white); overflow:hidden; box-shadow:var(--shadow-card); }
+      .comp-card-head{ display:flex; align-items:center; justify-content:space-between; padding:10px 13px; background:var(--steel-soft); border-bottom:1px solid var(--line); }
+      .comp-card-name{ font-weight:700; font-size:12px; color:var(--navy); }
+      .comp-card-saldo{ font-family:var(--f-mono); font-weight:700; font-size:11px; color:var(--steel); background:var(--white); border-radius:12px; padding:2px 9px; }
+      .comp-card-saldo.saldo-negativo{ color:var(--brick); }
+      .comp-card-body{ padding:8px 13px; display:flex; flex-direction:column; gap:6px; }
+      .comp-card-item{ display:flex; align-items:center; justify-content:space-between; font-size:11.5px; font-family:var(--f-mono); color:var(--ink); padding:4px 0; border-bottom:1px solid var(--paper-dim); }
+      .comp-card-item:last-child{ border-bottom:none; }
+      .comp-card-del{ background:none; border:none; color:var(--brick); opacity:.5; font-size:15px; line-height:1; padding:0 4px; cursor:pointer; }
+      .comp-card-del:hover{ opacity:1; }
     `;
     document.head.appendChild(style);
   },
@@ -2240,12 +2381,13 @@ const ViewCompensatorios = {
           diaAFavor: sinFecha ? '' : fecha, sinFecha
         });
         Toast.show('Compensatorio cargado');
+        this.operadorSeleccionado = ''; // vuelve a "Seleccionar operario" tras cargar
         this.render();
         Bus.emit();
       });
     }
 
-    el.querySelectorAll('.row-delete-comp').forEach(btn=>{
+    el.querySelectorAll('.comp-card-del').forEach(btn=>{
       btn.addEventListener('click', (e)=>{
         const compId = e.currentTarget.dataset.compId;
         Modal.open({
@@ -2273,11 +2415,21 @@ Router.renderers.compensatorios = () => ViewCompensatorios.render();
    ======================================================================= */
 
 const ViewHoy = {
+  orden: 'nombre', // nombre | sector
 
   render(){
     const el = document.getElementById('view-hoy');
-    const amOps = DB.operadores.filter(o=> o.turno === 'AM' && o.sector !== 'Coordinacion');
-    const pmOps = DB.operadores.filter(o=> o.turno === 'PM' && o.sector !== 'Coordinacion');
+    let amOps = DB.operadores.filter(o=> o.turno === 'AM' && o.sector !== 'Coordinacion');
+    let pmOps = DB.operadores.filter(o=> o.turno === 'PM' && o.sector !== 'Coordinacion');
+    let coordOps = DB.operadores.filter(o=> o.sector === 'Coordinacion');
+
+    const comparador = this.orden === 'sector'
+      ? (a,b)=> (a.sector||'').localeCompare(b.sector||'') || a.apellidoNombre.localeCompare(b.apellidoNombre)
+      : (a,b)=> a.apellidoNombre.localeCompare(b.apellidoNombre);
+    amOps = [...amOps].sort(comparador);
+    pmOps = [...pmOps].sort(comparador);
+    coordOps = [...coordOps].sort(comparador);
+
     const alerts = Domain.proximosEventos();
     const vacMes = Domain.vacacionesDelProximoMes();
 
@@ -2285,17 +2437,28 @@ const ViewHoy = {
       <div class="hoy-fecha-bar">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
         ${DateUtil.formatLong(HOY)}
+        <label class="hoy-orden-label">Ordenar
+          <select id="hoyOrdenSel" class="hoy-orden-select">
+            <option value="nombre" ${this.orden==='nombre'?'selected':''}>Alfabético</option>
+            <option value="sector" ${this.orden==='sector'?'selected':''}>Por sector</option>
+          </select>
+        </label>
       </div>
 
-      <div class="hoy-grid">
+      <div class="hoy-grid ${coordOps.length === 0 ? 'no-coord' : ''}">
         <div class="panel hoy-block" data-turno="AM">
-          <div class="panel-head"><h2><span class="tag tag-am">AM</span> Turno mañana</h2><span class="count">${amOps.length} operarios</span></div>
+          <div class="panel-head"><h2><span class="tag tag-am">AM</span> Mañana</h2><span class="count">${amOps.length}</span></div>
           <div id="hoyListAM"></div>
         </div>
         <div class="panel hoy-block" data-turno="PM">
-          <div class="panel-head"><h2><span class="tag tag-pm">PM</span> Turno tarde</h2><span class="count">${pmOps.length} operarios</span></div>
+          <div class="panel-head"><h2><span class="tag tag-pm">PM</span> Tarde</h2><span class="count">${pmOps.length}</span></div>
           <div id="hoyListPM"></div>
         </div>
+        ${coordOps.length > 0 ? `
+        <div class="panel hoy-block" data-turno="COORD">
+          <div class="panel-head"><h2><span class="tag tag-coord">COORD</span> Coordinadores</h2><span class="count">${coordOps.length}</span></div>
+          <div id="hoyListCOORD"></div>
+        </div>` : ''}
         <div class="hoy-side-col">
           <div class="panel">
             <div class="panel-head"><h2>Próximos eventos</h2><span class="count">${alerts.length}</span></div>
@@ -2329,9 +2492,13 @@ const ViewHoy = {
     this.injectStyles();
     document.getElementById('hoyListAM').innerHTML = this.listHTML(amOps);
     document.getElementById('hoyListPM').innerHTML = this.listHTML(pmOps);
+    const coordList = document.getElementById('hoyListCOORD');
+    if(coordList) coordList.innerHTML = this.listHTML(coordOps);
     this.bindSwitches(el);
     const btnExp = document.getElementById('btnExportarVacMes');
     if(btnExp) btnExp.addEventListener('click', ()=> this.onExportarVacMes(vacMes));
+    const ordenSel = document.getElementById('hoyOrdenSel');
+    if(ordenSel) ordenSel.addEventListener('change', (e)=>{ this.orden = e.target.value; this.render(); });
   },
 
   listHTML(ops){
@@ -2409,8 +2576,11 @@ const ViewHoy = {
     style.id = 'hoyStyles';
     style.textContent = `
       .hoy-fecha-bar{ display:flex; align-items:center; gap:7px; font-family:var(--f-mono); font-size:10.6px; color:var(--ink-dim); margin-bottom:14px; text-transform:capitalize; }
-      .hoy-grid{ display:grid; grid-template-columns:1.15fr 1.15fr 0.9fr; gap:14px; align-items:start; }
-      @media (max-width:1100px){ .hoy-grid{ grid-template-columns:1fr 1fr; } .hoy-side-col{ grid-column:1 / -1; } }
+      .hoy-orden-label{ margin-left:auto; display:flex; align-items:center; gap:6px; font-size:10.6px; text-transform:none; font-family:var(--f-body); }
+      .hoy-orden-select{ width:auto; padding:4px 8px; font-size:10.8px; }
+      .hoy-grid{ display:grid; grid-template-columns:repeat(4, 0.85fr); gap:12px; align-items:start; }
+      .hoy-grid.no-coord{ grid-template-columns:1.15fr 1.15fr 0.9fr; }
+      @media (max-width:1300px){ .hoy-grid{ grid-template-columns:1fr 1fr; } .hoy-side-col{ grid-column:1 / -1; } }
       @media (max-width:720px){ .hoy-grid{ grid-template-columns:1fr; } }
       .hoy-side-col{ display:flex; flex-direction:column; gap:14px; }
 
@@ -2861,6 +3031,161 @@ const ViewHistorial = {
 
 Router.renderers.historial = () => ViewHistorial.render();
 
+/* =======================================================================
+   view-usuarios.js — PESTAÑA NUEVA: Usuarios (solo visible para rol admin)
+   ======================================================================= */
+
+const ViewUsuarios = {
+
+  render(){
+    const el = document.getElementById('view-usuarios');
+
+    if(RolActual !== 'admin'){
+      el.innerHTML = `<div class="empty-state">Esta sección es exclusiva para el administrador.</div>`;
+      return;
+    }
+
+    el.innerHTML = `
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Crear nuevo usuario</h2>
+          <span class="count">Vos le pasás la contraseña al usuario por fuera de la app</span>
+        </div>
+        <div class="usr-form-row">
+          <div class="field" style="margin:0;">
+            <label>Usuario</label>
+            <input type="text" id="nuevoUsuarioInput" placeholder="ej: jperez">
+          </div>
+          <div class="field" style="margin:0;">
+            <label>Contraseña</label>
+            <input type="password" id="nuevoPassInput" placeholder="mínimo 6 caracteres">
+          </div>
+          <div class="field" style="margin:0;">
+            <label>Permiso</label>
+            <select id="nuevoRolSel">
+              <option value="total">Permiso total</option>
+              <option value="parcial">Permiso parcial</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" id="btnCrearUsuario">Crear usuario</button>
+        </div>
+        <p id="crearUsuarioError" style="color:var(--brick);font-size:12px;padding:0 18px 14px;display:none;"></p>
+      </div>
+
+      <div class="panel" style="margin-top:18px;">
+        <div class="panel-head">
+          <h2>Usuarios existentes</h2>
+          <span class="count">${DB.usuarios.length} usuario${DB.usuarios.length===1?'':'s'}</span>
+        </div>
+        ${DB.usuarios.length === 0 ? `<div class="empty-state">Todavía no creaste usuarios adicionales. Vos (admin1) ya tenés acceso completo por defecto.</div>` : `
+        <table class="usr-table">
+          <thead><tr><th>Usuario</th><th>Permiso</th><th></th></tr></thead>
+          <tbody>
+            ${DB.usuarios.map(u=> this.rowHTML(u)).join('')}
+          </tbody>
+        </table>
+        `}
+      </div>
+    `;
+
+    this.injectStyles();
+    this.bindEvents(el);
+  },
+
+  rowHTML(u){
+    const etiquetaRol = u.rol === 'total' ? 'Permiso total' : 'Permiso parcial';
+    return `
+      <tr>
+        <td class="col-nombre">${this.esc(u.usuario)}</td>
+        <td><span class="usr-rol-pill usr-rol-${u.rol}">${etiquetaRol}</span></td>
+        <td>
+          <button class="btn-icon row-delete-usr" data-usuario-id="${u.id}" data-usuario-nombre="${this.esc(u.usuario)}" aria-label="Eliminar usuario" title="Eliminar usuario">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--brick)" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14"/></svg>
+          </button>
+        </td>
+      </tr>
+    `;
+  },
+
+  esc(s){ return (s||'').toString().replace(/"/g,'&quot;'); },
+
+  injectStyles(){
+    if(document.getElementById('usrStyles')) return;
+    const style = document.createElement('style');
+    style.id = 'usrStyles';
+    style.textContent = `
+      .usr-form-row{ display:flex; align-items:flex-end; gap:14px; padding:16px 18px; flex-wrap:wrap; }
+      .usr-form-row .field input, .usr-form-row .field select{ width:200px; }
+      .usr-table{ border-collapse:collapse; width:100%; font-size:12.5px; }
+      .usr-table th, .usr-table td{ border-bottom:1px solid var(--line); padding:9px 18px; text-align:left; }
+      .usr-table thead th{ background:var(--paper-dim); font-weight:600; font-size:10.5px; text-transform:uppercase; letter-spacing:.03em; color:var(--ink-dim); }
+      .usr-table td.col-nombre{ font-weight:600; }
+      .usr-rol-pill{ display:inline-block; font-size:10.5px; font-weight:600; padding:3px 10px; border-radius:20px; }
+      .usr-rol-total{ background:var(--steel-soft); color:var(--steel); }
+      .usr-rol-parcial{ background:var(--umber-soft); color:var(--umber); }
+    `;
+    document.head.appendChild(style);
+  },
+
+  bindEvents(el){
+    const btnCrear = document.getElementById('btnCrearUsuario');
+    if(btnCrear){
+      btnCrear.addEventListener('click', async ()=>{
+        const usuario = document.getElementById('nuevoUsuarioInput').value.trim();
+        const pass = document.getElementById('nuevoPassInput').value;
+        const rol = document.getElementById('nuevoRolSel').value;
+        const errorEl = document.getElementById('crearUsuarioError');
+        errorEl.style.display = 'none';
+
+        if(!usuario || !pass){
+          errorEl.textContent = 'Completá usuario y contraseña.';
+          errorEl.style.display = 'block';
+          return;
+        }
+        if(pass.length < 6){
+          errorEl.textContent = 'La contraseña debe tener al menos 6 caracteres.';
+          errorEl.style.display = 'block';
+          return;
+        }
+
+        btnCrear.disabled = true;
+        btnCrear.textContent = 'Creando...';
+        const res = await crearUsuario(usuario, pass, rol);
+        btnCrear.disabled = false;
+        btnCrear.textContent = 'Crear usuario';
+
+        if(res.ok){
+          Toast.show(`Usuario "${usuario}" creado`);
+          this.render();
+        } else {
+          errorEl.textContent = res.msg;
+          errorEl.style.display = 'block';
+        }
+      });
+    }
+
+    el.querySelectorAll('.row-delete-usr').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{
+        const usuarioId = e.currentTarget.dataset.usuarioId;
+        const nombre = e.currentTarget.dataset.usuarioNombre;
+        Modal.open({
+          title:'Eliminar usuario',
+          bodyHTML:`<p>¿Confirmás eliminar el acceso de <strong>${this.esc(nombre)}</strong>? La cuenta deja de poder iniciar sesión inmediatamente.</p>`,
+          confirmText:'Eliminar',
+          onConfirm:async ()=>{
+            await borrarUsuario(usuarioId);
+            Toast.show('Usuario eliminado');
+            this.render();
+          }
+        });
+      });
+    });
+  }
+};
+
+Router.renderers.usuarios = () => ViewUsuarios.render();
+
+
 
 
 /* =======================================================================
@@ -2927,6 +3252,45 @@ document.getElementById('loginForm').addEventListener('submit', (e)=>{
 
 document.getElementById('btnLogout').addEventListener('click', ()=>{
   fbAuth.signOut();
+});
+
+document.getElementById('btnCambiarPass').addEventListener('click', ()=>{
+  Modal.open({
+    title:'Cambiar mi contraseña',
+    bodyHTML:`
+      <div class="field">
+        <label>Contraseña actual</label>
+        <input type="password" id="passActualInput" autocomplete="current-password">
+      </div>
+      <div class="field">
+        <label>Contraseña nueva (mínimo 6 caracteres)</label>
+        <input type="password" id="passNuevaInput" autocomplete="new-password">
+      </div>
+      <div class="field">
+        <label>Repetir contraseña nueva</label>
+        <input type="password" id="passNuevaRepInput" autocomplete="new-password">
+      </div>
+      <p id="passCambioError" style="color:var(--brick);font-size:12px;display:none;"></p>
+    `,
+    confirmText:'Cambiar contraseña',
+    onConfirm:(body)=>{
+      const actual = body.querySelector('#passActualInput').value;
+      const nueva = body.querySelector('#passNuevaInput').value;
+      const rep = body.querySelector('#passNuevaRepInput').value;
+      const errorEl = body.querySelector('#passCambioError');
+      const mostrarError = (msg)=>{ errorEl.textContent = msg; errorEl.style.display = 'block'; };
+
+      if(!actual || !nueva || !rep){ mostrarError('Completá los tres campos.'); return false; }
+      if(nueva !== rep){ mostrarError('Las contraseñas nuevas no coinciden.'); return false; }
+      if(nueva.length < 6){ mostrarError('La contraseña nueva debe tener al menos 6 caracteres.'); return false; }
+
+      cambiarMiPassword(actual, nueva).then(res=>{
+        if(res.ok){ Toast.show('Contraseña actualizada'); Modal.close(); }
+        else { mostrarError(res.msg); }
+      });
+      return false; // el cierre lo maneja la promesa de arriba
+    }
+  });
 });
 </script>
 </body>
