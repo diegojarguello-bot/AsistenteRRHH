@@ -1716,7 +1716,7 @@ const ViewCalendario = {
       .cal-bloques-wrapper{ display:flex; flex-direction:column; gap:16px; }
       .cal-block{ background:var(--white); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow-card); overflow:hidden; }
       .cal-block-head{ padding:10px 16px; border-bottom:1px solid var(--line); font-weight:700; font-family:var(--f-display); font-size:12.5px; display:flex; align-items:center; gap:8px; background:var(--paper-dim); }
-      .cal-scroll{ max-height:360px; overflow-y:auto; overflow-x:auto; }
+      .cal-scroll{ overflow-y:visible; overflow-x:auto; }
       .cal-scroll::-webkit-scrollbar{ width:10px; height:10px; }
       .cal-scroll::-webkit-scrollbar-thumb{ background:var(--line); border-radius:6px; }
       .cal-scroll::-webkit-scrollbar-track{ background:var(--paper-dim); }
@@ -2227,56 +2227,56 @@ const ViewVacaciones = {
       .vac-cols{ display:grid; grid-template-columns:1.5fr 1fr; gap:18px; align-items:start; }
       @media(max-width:980px){ .vac-cols{ grid-template-columns:1fr; } }
 
-      .vac-form-row{ display:flex; align-items:flex-end; gap:10px; padding:14px 18px; border-bottom:1px solid var(--line); background:var(--paper-dim); flex-wrap:wrap; }
-      .vac-sel{ width:auto; min-width:170px; padding:7px 10px; font-size:12px; }
+      .vac-form-row{ display:flex; align-items:flex-end; gap:8px; padding:10px 14px; border-bottom:1px solid var(--line); background:var(--paper-dim); flex-wrap:wrap; }
+      .vac-sel{ width:auto; min-width:150px; padding:5px 8px; font-size:11.5px; }
 
-      /* Filas horizontales apiladas — una por operador */
-      .vac-rows-list{ display:flex; flex-direction:column; gap:0; padding:10px 18px; }
+      /* Filas horizontales apiladas — compactas, una por operador */
+      .vac-rows-list{ display:flex; flex-direction:column; gap:0; padding:6px 14px; }
       .vac-row-item{
         display:flex; align-items:stretch;
-        border:1px solid #E5D9B6; border-radius:8px;
-        background:var(--white); margin-bottom:8px;
-        overflow:hidden; box-shadow:0 1px 3px rgba(30,58,95,.05);
+        border:1px solid #E5D9B6; border-radius:6px;
+        background:var(--white); margin-bottom:5px;
+        overflow:hidden;
       }
       .vac-row-left{
         background:var(--vacation-soft);
-        padding:10px 18px;
-        min-width:280px; max-width:300px;
-        display:flex; flex-direction:column; justify-content:center; gap:6px;
+        padding:6px 12px;
+        min-width:220px; max-width:240px;
+        display:flex; flex-direction:column; justify-content:center; gap:3px;
         border-right:1px solid #E5D9B6;
       }
-      .vac-row-nombre{ font-weight:700; font-size:12.5px; color:#5A4010; }
-      .vac-row-summary{ display:flex; gap:16px; }
-      .vac-row-kv{ display:flex; flex-direction:column; gap:1px; }
-      .vac-row-k{ font-size:8.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#8A6520; }
-      .vac-row-v{ font-family:var(--f-mono); font-weight:700; font-size:14px; color:var(--navy); }
+      .vac-row-nombre{ font-weight:700; font-size:10.5px; color:#5A4010; }
+      .vac-row-summary{ display:flex; gap:10px; }
+      .vac-row-kv{ display:flex; flex-direction:column; gap:0; }
+      .vac-row-k{ font-size:7.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#8A6520; }
+      .vac-row-v{ font-family:var(--f-mono); font-weight:700; font-size:11.5px; color:var(--navy); }
       .vac-row-negativo .vac-row-v{ color:var(--brick); }
 
       .vac-row-divider{ width:1px; background:#E5D9B6; flex:0 0 1px; }
 
       .vac-row-right{
-        flex:1; padding:8px 16px;
-        display:flex; flex-direction:column; justify-content:center; gap:3px;
+        flex:1; padding:5px 12px;
+        display:flex; flex-direction:column; justify-content:center; gap:2px;
       }
       .vac-row-head-periodos{
-        display:grid; grid-template-columns:1fr 50px 22px;
-        font-size:8.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
-        color:var(--ink-dim); padding-bottom:4px; border-bottom:1px solid var(--line); margin-bottom:2px;
+        display:grid; grid-template-columns:1fr 44px 20px;
+        font-size:7.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+        color:var(--ink-dim); padding-bottom:3px; border-bottom:1px solid var(--line); margin-bottom:1px;
       }
       .vac-row-periodo-fila{
-        display:grid; grid-template-columns:1fr 50px 22px;
-        align-items:center; padding:3px 0;
+        display:grid; grid-template-columns:1fr 44px 20px;
+        align-items:center; padding:2px 0;
       }
-      .vac-periodo-label{ font-family:var(--f-mono); font-size:12px; font-weight:600; color:var(--ink); }
-      .vac-periodo-dias{ font-family:var(--f-mono); font-weight:700; font-size:12px; color:var(--steel); }
+      .vac-periodo-label{ font-family:var(--f-mono); font-size:10.5px; font-weight:600; color:var(--ink); }
+      .vac-periodo-dias{ font-family:var(--f-mono); font-weight:700; font-size:10.5px; color:var(--steel); }
       .vac-row-agotado .vac-periodo-label,
       .vac-row-agotado .vac-periodo-dias{ opacity:.35; text-decoration:line-through; }
-      .chip-del{ background:none; border:none; color:var(--brick); opacity:.4; font-size:15px; cursor:pointer; padding:0 2px; line-height:1; }
+      .chip-del{ background:none; border:none; color:var(--brick); opacity:.4; font-size:13px; cursor:pointer; padding:0 2px; line-height:1; }
       .chip-del:hover{ opacity:1; }
-      .vac-row-add{ margin-top:4px; align-self:flex-start; }
+      .vac-row-add{ margin-top:3px; align-self:flex-start; }
 
-      .hoy-alerts{ padding:6px 0; }
-      .hoy-alert-item{ display:flex; align-items:center; gap:8px; padding:8px 15px; font-size:10.9px; border-bottom:1px solid var(--line); }
+      .hoy-alerts{ padding:4px 0; }
+      .hoy-alert-item{ display:flex; align-items:center; gap:8px; padding:7px 14px; font-size:10.5px; border-bottom:1px solid var(--line); }
       .hoy-alert-item:last-child{ border-bottom:none; }
       .alert-dot{ width:5px; height:5px; border-radius:50%; background:var(--steel); flex:0 0 5px; }
     `;
