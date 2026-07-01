@@ -962,28 +962,54 @@ const Domain = {
     return { tipo, desde, hasta };
   },
 
-  // Saldo total de vacaciones disponibles (créditos cargados - días ya asignados en calendario)
+  // ============================================================
+  // HELPERS DE PERÍODO (formato "AAAA/AAAA+1")
+  // Compatibilidad: si el lote tiene {anio} en vez de {periodo}, lo convierte automáticamente.
+  // ============================================================
+
+  // Convierte un número de año al string de período: 2025 → "2025/2026"
+  anioToPeriodo(anio){ return `${anio}/${anio+1}`; },
+
+  // Devuelve el período de un lote, leyendo {periodo} o convirtiendo {anio} si existe
+  loteGetPeriodo(lote){
+    if(lote.periodo) return lote.periodo;
+    if(lote.anio) return this.anioToPeriodo(lote.anio);
+    return '?';
+  },
+
+  // Ordena períodos correctamente: "2024/2025" < "2025/2026" (comparación de strings funciona)
+  ordenarPeriodos(a, b){ return this.loteGetPeriodo(a).localeCompare(this.loteGetPeriodo(b)); },
+
+  // Saldo total de vacaciones VIGENTES:
+  // = días cargados en créditos - días YA pasados (fecha <= HOY).
+  // Los días futuros asignados en el calendario siguen contando como disponibles
+  // hasta que pasen (según la lógica pedida: al vencer se descuentan).
   saldoVacaciones(operadorId){
     const cargado = DB.vacacionesCreditos
       .filter(v=> v.operadorId===operadorId)
       .reduce((sum,v)=> sum+v.dias, 0);
-    const usado = DB.eventos.filter(e=> e.operadorId===operadorId && e.tipo==='vacaciones').length;
-    return cargado - usado;
+    // días ya disfrutados (pasados): descuentan el saldo permanentemente
+    const pasados = DB.eventos.filter(e=>
+      e.operadorId===operadorId && e.tipo==='vacaciones' && e.fecha <= HOY
+    ).length;
+    return cargado - pasados;
   },
 
-  // Días de vacaciones asignados en el calendario cuya fecha todavía no llegó (pendientes de disfrutar)
+  // Días asignados en el calendario que todavía NO pasaron (futuros = pendientes)
   vacacionesPendientesFuturas(operadorId){
     return DB.eventos.filter(e=> e.operadorId===operadorId && e.tipo==='vacaciones' && e.fecha > HOY).length;
   },
 
-  // Si el saldo quedó negativo (ej: se borró/redujo un crédito), borra automáticamente
-  // las vacaciones FUTURAS ya asignadas en el calendario, empezando por las más nuevas,
-  // hasta que el saldo deje de ser negativo. Devuelve la cantidad de días borrados (para avisar al usuario).
+  // Días asignados en el calendario que YA pasaron (ya disfrutados)
+  vacacionesPasadas(operadorId){
+    return DB.eventos.filter(e=> e.operadorId===operadorId && e.tipo==='vacaciones' && e.fecha <= HOY).length;
+  },
+
+  // Si el saldo quedó negativo, borra vacaciones futuras empezando por las más nuevas
   corregirSaldoNegativoVacaciones(operadorId){
     let saldo = this.saldoVacaciones(operadorId);
     if(saldo >= 0) return 0;
     let borrados = 0;
-    // tomamos los eventos de vacaciones futuros (fecha > HOY), ordenados de más nuevo a más viejo
     const futuros = DB.eventos
       .filter(e=> e.operadorId===operadorId && e.tipo==='vacaciones' && e.fecha > HOY)
       .sort((a,b)=> b.fecha.localeCompare(a.fecha));
@@ -996,41 +1022,36 @@ const Domain = {
     return borrados;
   },
 
-  // Lotes de crédito de vacaciones con su saldo restante ya calculado (FIFO por año).
-  // Los lotes que llegaron a 0 no se devuelven (desaparecen de la vista, como se pidió).
+  // Lotes con saldo restante calculado por FIFO de período, excluyendo días ya pasados.
+  // Los lotes agotados (restante===0) siguen apareciendo pero marcados como agotados.
   lotesVacacionesConSaldo(operadorId){
     const lotes = DB.vacacionesCreditos
       .filter(v=> v.operadorId===operadorId)
-      .sort((a,b)=> a.anio-b.anio);
-    let usados = DB.eventos.filter(e=> e.operadorId===operadorId && e.tipo==='vacaciones').length;
-    const resultado = [];
-    for(const lote of lotes){
-      const consumidoDeEsteLote = Math.min(usados, lote.dias);
-      const restante = lote.dias - consumidoDeEsteLote;
-      usados -= consumidoDeEsteLote;
-      if(restante > 0){
-        resultado.push({ ...lote, restante });
-      }
-    }
-    return resultado;
+      .sort((a,b)=> this.ordenarPeriodos(a,b));
+    let usadosPasados = this.vacacionesPasadas(operadorId); // solo los ya disfrutados reducen el saldo
+    return lotes.map(lote=>{
+      const consumido = Math.min(usadosPasados, lote.dias);
+      const restante = lote.dias - consumido;
+      usadosPasados -= consumido;
+      return { ...lote, periodo: this.loteGetPeriodo(lote), restante, agotado: restante===0 };
+    });
   },
 
-  // Suma `dias` al crédito del año corriente de CADA operador individualmente.
-  // Si el operador ya tiene un lote para ese año, le suma encima; si no, crea uno nuevo.
-  asignarCreditoATodos(dias){
-    const anioActual = DateUtil.parse(HOY).getFullYear();
+  // Suma `dias` a un período específico de CADA operador (para el botón "Asignar a todos")
+  asignarCreditoATodos(dias, periodo){
     let afectados = 0;
     DB.operadores.forEach(op=>{
-      const lote = DB.vacacionesCreditos.find(v=> v.operadorId===op.id && v.anio===anioActual);
+      const lote = DB.vacacionesCreditos.find(v=> v.operadorId===op.id && this.loteGetPeriodo(v)===periodo);
       if(lote){
         lote.dias += dias;
       } else {
-        DB.vacacionesCreditos.push({ id:'vc_'+Date.now()+'_'+op.id, operadorId:op.id, anio:anioActual, dias });
+        DB.vacacionesCreditos.push({ id:'vc_'+Date.now()+'_'+op.id, operadorId:op.id, periodo, dias });
       }
       afectados++;
     });
     return afectados;
   },
+
 
   // Saldo de compensatorios disponibles (créditos cargados - francos ya tomados)
   saldoFrancos(operadorId){
@@ -1057,12 +1078,10 @@ const Domain = {
   descontarVacacion(operadorId){
     const lotes = DB.vacacionesCreditos
       .filter(v=> v.operadorId===operadorId)
-      .sort((a,b)=> a.anio-b.anio);
-    // calculamos cuánto se usó de cada lote en orden, comparando contra eventos ya puestos
+      .sort((a,b)=> this.ordenarPeriodos(a,b));
     let usados = DB.eventos.filter(e=> e.operadorId===operadorId && e.tipo==='vacaciones').length;
     for(const lote of lotes){
       if(usados < lote.dias){
-        // hay margen en este lote para 1 día más implícito (no se modifica el lote, se infiere del conteo)
         return true;
       }
       usados -= lote.dias;
@@ -1521,19 +1540,21 @@ Router.renderers.base = () => ViewBase.render();
    ======================================================================= */
 
 const ViewCalendario = {
-  mesActual: null, // {year, monthIndex}
-  seleccion: null, // { operadorId, fechas: [iso,...] }
+  mesActual: null,
+  seleccion: null,
   dragging: false,
   dragOperadorId: null,
   dragStartFecha: null,
+  filtros: { AM: true, PM: true, COORD: true },
 
   ESTILOS: {
-    vacaciones:  { bg:'var(--vacation-soft)',  fg:'#8A6520', label:(e)=> 'vacaciones' },
-    licencia:    { bg:'var(--brick-soft)',  fg:'var(--brick)', label:(e)=> 'licencia' },
-    franco:      { bg:'var(--sage-soft)',   fg:'var(--sage)', label:(e)=> e.origenFranco ? `compensó (${DateUtil.formatDDMM(e.origenFranco)})` : 'compensatorio' },
-    cambioTurno: { bg:'#2A3245',            fg:'#fff',         label:(e)=> e.turnoCambio === 'Nocturno' ? 'noche' : `cambio a ${e.turnoCambio}` },
-    ausente:     { bg:'var(--brick-soft)',  fg:'var(--brick)', label:(e)=> 'ausente' },
-    turnoCoord:  { bg:'#EDE6F5',            fg:'#6B4E96',      label:(e)=> e.turnoDia },
+    vacaciones:      { bg:'var(--vacation-soft)',  fg:'#8A6520', label:(e)=> 'vacaciones' },
+    vacacionesPasadas:{ bg:'#EDE9E0',              fg:'#AAA090', label:(e)=> 'vacaciones ✓' },
+    licencia:        { bg:'var(--brick-soft)',  fg:'var(--brick)', label:(e)=> 'licencia' },
+    franco:          { bg:'var(--sage-soft)',   fg:'var(--sage)', label:(e)=> e.origenFranco ? `compensó (${DateUtil.formatDDMM(e.origenFranco)})` : 'compensatorio' },
+    cambioTurno:     { bg:'#2A3245',            fg:'#fff',         label:(e)=> e.turnoCambio === 'Nocturno' ? 'noche' : `cambio a ${e.turnoCambio}` },
+    ausente:         { bg:'var(--brick-soft)',  fg:'var(--brick)', label:(e)=> 'ausente' },
+    turnoCoord:      { bg:'#EDE6F5',            fg:'#6B4E96',      label:(e)=> e.turnoDia },
   },
 
   init(){
@@ -1567,6 +1588,12 @@ const ViewCalendario = {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
           </button>
         </div>
+        <div class="cal-filtros">
+          <span class="cal-filtros-label">Ver:</span>
+          <label class="cal-chk-label"><input type="checkbox" id="filtroAM" ${this.filtros.AM?'checked':''}><span class="tag tag-am">AM</span></label>
+          <label class="cal-chk-label"><input type="checkbox" id="filtroPM" ${this.filtros.PM?'checked':''}><span class="tag tag-pm">PM</span></label>
+          ${coordOps.length > 0 ? `<label class="cal-chk-label"><input type="checkbox" id="filtroCOORD" ${this.filtros.COORD?'checked':''}><span class="tag tag-coord">COORD</span></label>` : ''}
+        </div>
         <div class="cal-legend">
           <span class="leg-item"><i style="background:var(--vacation-soft);border:1px solid var(--vacation)"></i>Vacaciones</span>
           <span class="leg-item"><i style="background:var(--brick-soft);border:1px solid var(--brick)"></i>Licencia</span>
@@ -1575,14 +1602,14 @@ const ViewCalendario = {
         </div>
       </div>
 
-      <div class="cal-block" data-turno="AM">
+      <div class="cal-block" data-turno="AM" ${!this.filtros.AM?'style="display:none"':''}>
         <div class="cal-block-head"><span class="tag tag-am">AM</span> Turno mañana</div>
         <div class="scroll-x cal-scroll" id="calScrollAM">
           ${this.gridHTML(amOps, fechas)}
         </div>
       </div>
 
-      <div class="cal-block" data-turno="PM" style="margin-top:18px;">
+      <div class="cal-block" data-turno="PM" style="margin-top:18px;${!this.filtros.PM?'display:none':''}">
         <div class="cal-block-head"><span class="tag tag-pm">PM</span> Turno tarde</div>
         <div class="scroll-x cal-scroll" id="calScrollPM">
           ${this.gridHTML(pmOps, fechas)}
@@ -1590,7 +1617,7 @@ const ViewCalendario = {
       </div>
 
       ${coordOps.length > 0 ? `
-      <div class="cal-block" data-turno="COORD" style="margin-top:18px;">
+      <div class="cal-block" data-turno="COORD" style="margin-top:18px;${!this.filtros.COORD?'display:none':''}">
         <div class="cal-block-head"><span class="tag tag-coord">COORD</span> Coordinadores</div>
         <div class="scroll-x cal-scroll" id="calScrollCOORD">
           ${this.gridHTML(coordOps, fechas)}
@@ -1622,10 +1649,13 @@ const ViewCalendario = {
             <td class="cal-namecol">Operario</td>
             ${fechas.map(f=>{
               const d = DateUtil.parse(f);
+              const dow = d.getDay(); // 0=dom, 6=sáb
+              const esWeekend = dow === 0 || dow === 6;
               const diasAbrev = ['dom','lun','mar','mié','jue','vie','sáb'];
-              const nombreDia = diasAbrev[d.getDay()];
+              const nombreDia = diasAbrev[dow];
               const diaLabel = `${d.getDate()}-${d.getMonth()+1}`;
-              return `<td class="cal-daycol ${f===HOY?'is-hoy':''}" data-fecha="${f}"><span class="cal-day-name">${nombreDia}</span><span class="cal-day-num">${diaLabel}</span></td>`;
+              const clases = ['cal-daycol', f===HOY?'is-hoy':'', esWeekend?'is-weekend':''].filter(Boolean).join(' ');
+              return `<td class="${clases}" data-fecha="${f}"><span class="cal-day-name">${nombreDia}</span><span class="cal-day-num">${diaLabel}</span></td>`;
             }).join('')}
           </tr>
         </thead>
@@ -1647,16 +1677,21 @@ const ViewCalendario = {
 
   cellHTML(operadorId, fecha){
     const eventosDia = Domain.eventosDeFecha(operadorId, fecha);
-    // prioridad: cualquier evento que no sea meramente informativo (turnoCoord) gana la celda
     const ev = eventosDia.find(e=> e.tipo !== 'turnoCoord') || eventosDia[0];
+    const dow = DateUtil.parse(fecha).getDay();
+    const esWeekend = dow === 0 || dow === 6;
     let style = '', label = '', cls = 'cal-cell';
     if(fecha === HOY) cls += ' is-hoy';
+    if(esWeekend && !ev) cls += ' is-weekend';
     if(ev){
-      const e = this.ESTILOS[ev.tipo];
+      // vacaciones ya pasadas se muestran con estilo opaco diferenciado
+      const tipoEstilo = (ev.tipo === 'vacaciones' && fecha < HOY) ? 'vacacionesPasadas' : ev.tipo;
+      const e = this.ESTILOS[tipoEstilo] || this.ESTILOS[ev.tipo];
       if(e){
         style = `background:${e.bg};color:${e.fg};`;
         label = e.label(ev);
         cls += ` cal-cell-evt evt-${ev.tipo}`;
+        if(esWeekend) cls += ' is-weekend';
       }
     }
     return `<td class="${cls}" data-operador-id="${operadorId}" data-fecha="${fecha}" style="${style}">${label}</td>`;
@@ -1702,6 +1737,14 @@ const ViewCalendario = {
       .cal-cell{ cursor:pointer; transition:background .08s; position:relative; }
       .cal-cell:hover{ background:#F1EFE8; }
       .cal-cell.is-hoy{ box-shadow:inset 0 0 0 1px var(--vacation); background:#FFFBF0; }
+      .cal-cell.is-weekend:not(.cal-cell-evt){ background:#F0F2F6; }
+      .cal-daycol.is-weekend{ background:#EAECF2 !important; color:var(--ink-dim); }
+      .cal-daycol.is-weekend .cal-day-name, .cal-daycol.is-weekend .cal-day-num{ opacity:.65; }
+
+      .cal-filtros{ display:flex; align-items:center; gap:8px; }
+      .cal-filtros-label{ font-size:10.5px; font-weight:600; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.04em; }
+      .cal-chk-label{ display:inline-flex; align-items:center; gap:5px; cursor:pointer; user-select:none; font-size:11px; }
+      .cal-chk-label input[type=checkbox]{ accent-color:var(--navy); width:13px; height:13px; }
       .cal-cell-evt{ font-size:10px; font-weight:700; letter-spacing:.01em; }
       .cal-cell-evt:hover{ filter:brightness(0.96); }
       .cal-cell.is-selecting{ background:var(--steel) !important; box-shadow:inset 0 0 0 2px var(--navy); }
@@ -1738,6 +1781,16 @@ const ViewCalendario = {
       this.mesActual = { year, monthIndex };
       this.clearSeleccion();
       this.render();
+    });
+    // checkboxes de filtro de bloques — toggle sin re-render completo (solo muestra/oculta el bloque)
+    ['AM','PM','COORD'].forEach(turno=>{
+      const chk = document.getElementById(`filtro${turno}`);
+      if(!chk) return;
+      chk.addEventListener('change', (e)=>{
+        this.filtros[turno] = e.target.checked;
+        const bloque = document.querySelector(`.cal-block[data-turno="${turno}"]`);
+        if(bloque) bloque.style.display = e.target.checked ? '' : 'none';
+      });
     });
   },
 
@@ -2021,10 +2074,27 @@ Router.renderers.calendario = () => ViewCalendario.render();
    ======================================================================= */
 
 const ViewVacaciones = {
+  // Genera las opciones de período: desde 4 años atrás hasta 2 años adelante
+  periodosDisponibles(){
+    const anioHoy = DateUtil.parse(HOY).getFullYear();
+    const periodos = [];
+    for(let a = anioHoy - 4; a <= anioHoy + 2; a++){
+      periodos.push(`${a}/${a+1}`);
+    }
+    return periodos;
+  },
+
+  // Período sugerido por defecto (el que corresponde al año corriente)
+  periodoDefault(){
+    const anioHoy = DateUtil.parse(HOY).getFullYear();
+    return `${anioHoy}/${anioHoy+1}`;
+  },
 
   render(){
     const el = document.getElementById('view-vacaciones');
     const ops = DB.operadores;
+    const opsConCreditos = ops.filter(op=> DB.vacacionesCreditos.some(v=> v.operadorId===op.id));
+    const proximos = Domain.proximosEventos();
 
     el.innerHTML = `
       <div class="vac-cols">
@@ -2032,36 +2102,53 @@ const ViewVacaciones = {
           <div class="panel-head">
             <h2>Asignar vacaciones</h2>
             <div style="display:flex;align-items:center;gap:10px;">
-              <span class="count">Descuento desde el año más antiguo</span>
+              <span class="count">FIFO por período</span>
               <button class="btn btn-sm btn-primary" id="btnAsignarATodos">+ Asignar a todos</button>
             </div>
           </div>
-          <div class="scroll-x">
-            <table class="vac-table">
-              <thead>
-                <tr>
-                  <th style="min-width:190px;">Nombre y Apellido</th>
-                  <th style="min-width:230px;">Asignar Vacaciones</th>
-                  <th style="min-width:150px;">Saldo</th>
-                </tr>
-              </thead>
-              <tbody id="vacTbody">
-                ${ops.map(op=> this.vacRowHTML(op)).join('')}
-              </tbody>
-            </table>
+
+          <!-- Formulario de carga de crédito -->
+          <div class="vac-form-row">
+            <div class="field" style="margin:0;">
+              <label>Operario</label>
+              <select id="vacOpSel" class="vac-sel">
+                <option value="">— Seleccionar —</option>
+                ${ops.map(op=> `<option value="${op.id}">${this.esc(op.apellidoNombre)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="field" style="margin:0;">
+              <label>Período</label>
+              <select id="vacPeriodoSel" class="vac-sel">
+                ${this.periodosDisponibles().map(p=> `<option value="${p}" ${p===this.periodoDefault()?'selected':''}>${p}</option>`).join('')}
+              </select>
+            </div>
+            <div class="field" style="margin:0;">
+              <label>Días</label>
+              <input type="number" id="vacDiasInput" value="14" min="1" step="7" style="width:70px;">
+            </div>
+            <button class="btn btn-primary btn-sm" id="btnCargarCredito">Confirmar carga</button>
           </div>
+
+          <!-- Tarjetas de operadores con créditos -->
+          ${opsConCreditos.length === 0
+            ? `<div class="empty-state">Cargá créditos a los operadores usando el formulario de arriba.</div>`
+            : `<div class="vac-cards-container">${opsConCreditos.map(op=> this.tarjetaHTML(op)).join('')}</div>`
+          }
         </div>
 
         <div class="panel">
           <div class="panel-head">
             <h2>Próximos eventos</h2>
             <div style="display:flex;align-items:center;gap:8px;">
-              <span class="count">${this.proximosEventos().length}</span>
-              ${this.proximosEventos().length > 0 ? `<button class="btn btn-sm" id="btnExportarProximos">Excel</button>` : ''}
+              <span class="count">${proximos.length}</span>
+              ${proximos.length > 0 ? `<button class="btn btn-sm" id="btnExportarProximos">Excel</button>` : ''}
             </div>
           </div>
           <div class="hoy-alerts">
-            ${this.proximosEventosHTML()}
+            ${proximos.length === 0
+              ? `<div class="empty-state">No hay vacaciones ni licencias por empezar o terminar próximamente.</div>`
+              : proximos.map(a=> `<div class="hoy-alert-item"><span class="alert-dot"></span>${a.texto}</div>`).join('')
+            }
           </div>
         </div>
       </div>
@@ -2071,18 +2158,47 @@ const ViewVacaciones = {
     this.bindEvents(el);
   },
 
-  proximosEventos(){
-    return Domain.proximosEventos();
+  tarjetaHTML(op){
+    const lotes = Domain.lotesVacacionesConSaldo(op.id);
+    const totalVigentes = lotes.reduce((s,l)=> s + l.dias, 0); // créditos brutos
+    const cargadasCalendario = Domain.vacacionesPendientesFuturas(op.id); // futuras asignadas
+    const restoDisponible = totalVigentes - cargadasCalendario - Domain.vacacionesPasadas(op.id);
+
+    return `
+      <div class="vac-card">
+        <div class="vac-card-header">
+          <span class="vac-card-op">${this.esc(op.apellidoNombre)}</span>
+          <div class="vac-card-summary">
+            <span class="vac-card-kv"><span class="vac-card-k">Total</span><span class="vac-card-v">${totalVigentes}d</span></span>
+            <span class="vac-card-kv"><span class="vac-card-k">En calendario</span><span class="vac-card-v">${cargadasCalendario}d</span></span>
+            <span class="vac-card-kv ${restoDisponible < 0 ? 'vac-card-negativo':''}"><span class="vac-card-k">Resto</span><span class="vac-card-v">${restoDisponible}d</span></span>
+          </div>
+        </div>
+        <div class="vac-card-body">
+          <div class="vac-card-col-head">
+            <span>Período</span>
+            <span>Días</span>
+            <span></span>
+          </div>
+          ${lotes.map(l=> `
+            <div class="vac-card-row ${l.agotado?'vac-row-agotado':''}">
+              <span class="vac-card-periodo">${l.periodo}</span>
+              <span class="vac-card-dias">${l.dias}</span>
+              <button class="chip-del" data-credito-id="${l.id}" title="Quitar lote">×</button>
+            </div>
+          `).join('')}
+          <div class="vac-card-add">
+            <button class="btn btn-sm" data-action="add-credito" data-id="${op.id}">+ Período</button>
+          </div>
+        </div>
+      </div>
+    `;
   },
 
-  proximosEventosHTML(){
-    const lista = this.proximosEventos();
-    if(lista.length === 0) return `<div class="empty-state">No hay vacaciones ni licencias por empezar o terminar próximamente.</div>`;
-    return lista.map(a=> `<div class="hoy-alert-item"><span class="alert-dot"></span>${a.texto}</div>`).join('');
-  },
+  esc(s){ return (s||'').toString().replace(/"/g,'&quot;'); },
 
   onExportarProximos(){
-    const lista = this.proximosEventos();
+    const lista = Domain.proximosEventos();
     const filas = lista.map(a=> ({ 'Evento': a.texto, 'Días': a.dias }));
     const ws = XLSX.utils.json_to_sheet(filas);
     const wb = XLSX.utils.book_new();
@@ -2091,72 +2207,43 @@ const ViewVacaciones = {
     Toast.show('Excel exportado');
   },
 
-  vacRowHTML(op){
-    const lotesVivos = Domain.lotesVacacionesConSaldo(op.id);
-    const todosLosLotes = DB.vacacionesCreditos.filter(v=> v.operadorId === op.id).sort((a,b)=> a.anio-b.anio);
-    const idsVivos = new Set(lotesVivos.map(l=> l.id));
-    const saldo = Domain.saldoVacaciones(op.id);
-    const pendientesFuturas = Domain.vacacionesPendientesFuturas(op.id);
-    return `
-      <tr data-operador-id="${op.id}">
-        <td class="col-nombre">${this.esc(op.apellidoNombre)}</td>
-        <td>
-          <div class="creditos-chips">
-            ${todosLosLotes.map(c=> {
-              const agotado = !idsVivos.has(c.id);
-              return `
-              <span class="credito-chip ${agotado?'chip-agotado':''}">
-                <input type="number" min="0" data-credito-field="anio" data-credito-id="${c.id}" value="${c.anio}" class="chip-anio">
-                <span>:</span>
-                <input type="number" min="0" step="7" data-credito-field="dias" data-credito-id="${c.id}" value="${c.dias}" class="chip-dias">
-                <button class="chip-del" data-credito-id="${c.id}" title="Quitar lote" aria-label="Quitar lote">×</button>
-              </span>
-            `;}).join('')}
-            <button class="btn btn-sm" data-action="add-credito" data-id="${op.id}">+ Año</button>
-          </div>
-        </td>
-        <td class="saldo-cell ${saldo<0?'saldo-negativo':''}">
-          ${saldo} días
-          ${pendientesFuturas > 0 ? `<span class="saldo-nota">(${pendientesFuturas} día${pendientesFuturas===1?'':'s'} actualmente en calendario)</span>` : ''}
-        </td>
-      </tr>
-    `;
-  },
-
-  esc(s){ return (s||'').toString().replace(/"/g,'&quot;'); },
-
   injectStyles(){
     if(document.getElementById('vacStyles')) return;
     const style = document.createElement('style');
     style.id = 'vacStyles';
     style.textContent = `
-      .vac-table{ border-collapse:collapse; width:100%; font-size:12px; }
-      .vac-table th, .vac-table td{ border-bottom:1px solid var(--line); border-right:1px solid var(--line); padding:7px 9px; text-align:left; vertical-align:middle; }
-      .vac-table thead th{ background:var(--paper-dim); font-weight:600; font-size:10.5px; text-transform:uppercase; letter-spacing:.03em; color:var(--ink-dim); }
-      .vac-table td.col-nombre{ font-weight:600; min-width:190px; }
-      .vac-table input[type=date], .vac-table input[type=number]{ font-family:var(--f-mono); }
+      .vac-cols{ display:grid; grid-template-columns:1.5fr 1fr; gap:18px; align-items:start; }
+      @media(max-width:980px){ .vac-cols{ grid-template-columns:1fr; } }
 
-      .vac-cols{ display:grid; grid-template-columns:1.3fr 1fr; gap:18px; align-items:start; }
-      @media (max-width:980px){ .vac-cols{ grid-template-columns:1fr; } }
+      .vac-form-row{ display:flex; align-items:flex-end; gap:10px; padding:14px 18px; border-bottom:1px solid var(--line); background:var(--paper-dim); flex-wrap:wrap; }
+      .vac-sel{ width:auto; min-width:170px; padding:7px 10px; font-size:12px; }
 
-      .creditos-chips{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
-      .credito-chip{ display:inline-flex; align-items:center; gap:3px; background:var(--vacation-soft); border:1px solid #EDDDB3; border-radius:20px; padding:3px 6px 3px 10px; font-family:var(--f-mono); font-size:11.5px; }
-      .credito-chip input{ border:none; background:transparent; width:42px; padding:2px; text-align:center; font-size:11.5px; }
-      .credito-chip .chip-anio{ width:48px; font-weight:600; }
-      .credito-chip .chip-dias{ width:38px; }
-      .credito-chip span{ color:var(--ink-dim); }
-      .chip-del{ background:none; border:none; color:#8A6D2C; font-size:15px; line-height:1; padding:0 4px; cursor:pointer; opacity:.5; }
+      .vac-cards-container{ display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:12px; padding:14px 18px; }
+
+      .vac-card{ border:1px solid var(--line); border-radius:8px; background:var(--white); overflow:hidden; box-shadow:var(--shadow-card); }
+      .vac-card-header{ background:var(--vacation-soft); border-bottom:1px solid #EDDDB3; padding:10px 14px; display:flex; flex-direction:column; gap:6px; }
+      .vac-card-op{ font-weight:700; font-size:12.5px; color:#5A4010; }
+      .vac-card-summary{ display:flex; gap:14px; }
+      .vac-card-kv{ display:flex; flex-direction:column; align-items:flex-start; gap:1px; }
+      .vac-card-k{ font-size:9.5px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:#8A6520; }
+      .vac-card-v{ font-family:var(--f-mono); font-weight:700; font-size:14px; color:var(--navy); }
+      .vac-card-negativo .vac-card-v{ color:var(--brick); }
+
+      .vac-card-body{ padding:8px 14px 12px; }
+      .vac-card-col-head{ display:grid; grid-template-columns:1fr auto auto; gap:8px; padding:4px 0; font-size:9.5px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-dim); border-bottom:1px solid var(--line); margin-bottom:4px; }
+      .vac-card-row{ display:grid; grid-template-columns:1fr auto auto; gap:8px; align-items:center; padding:5px 0; border-bottom:1px dashed var(--paper-dim); }
+      .vac-card-row:last-child{ border-bottom:none; }
+      .vac-card-periodo{ font-family:var(--f-mono); font-size:12px; font-weight:600; color:var(--ink); }
+      .vac-card-dias{ font-family:var(--f-mono); font-weight:700; font-size:12px; color:var(--steel); min-width:30px; text-align:right; }
+      .vac-row-agotado .vac-card-periodo, .vac-row-agotado .vac-card-dias{ opacity:.35; text-decoration:line-through; }
+      .chip-del{ background:none; border:none; color:var(--brick); opacity:.4; font-size:15px; cursor:pointer; padding:0 4px; line-height:1; }
       .chip-del:hover{ opacity:1; }
-      .chip-agotado{ opacity:.45; background:var(--paper-dim); border-style:dashed; }
-
-      .saldo-cell{ font-family:var(--f-mono); font-weight:700; }
-      .saldo-negativo{ color:var(--brick); }
-      .saldo-nota{ display:block; font-family:var(--f-body); font-weight:400; font-style:italic; font-size:10.5px; color:var(--ink-dim); margin-top:2px; }
+      .vac-card-add{ margin-top:8px; }
 
       .hoy-alerts{ padding:6px 0; }
-      .hoy-alert-item{ display:flex; align-items:center; gap:10px; padding:9px 18px; font-size:12.2px; border-bottom:1px solid var(--line); }
+      .hoy-alert-item{ display:flex; align-items:center; gap:8px; padding:8px 15px; font-size:10.9px; border-bottom:1px solid var(--line); }
       .hoy-alert-item:last-child{ border-bottom:none; }
-      .alert-dot{ width:6px; height:6px; border-radius:50%; background:var(--steel); flex:0 0 6px; }
+      .alert-dot{ width:5px; height:5px; border-radius:50%; background:var(--steel); flex:0 0 5px; }
     `;
     document.head.appendChild(style);
   },
@@ -2165,34 +2252,36 @@ const ViewVacaciones = {
     const btnExpProx = document.getElementById('btnExportarProximos');
     if(btnExpProx) btnExpProx.addEventListener('click', ()=> this.onExportarProximos());
 
-    el.querySelectorAll('[data-credito-field]').forEach(input=>{
-      input.addEventListener('change', (e)=>{
-        const credito = DB.vacacionesCreditos.find(c=> c.id === e.target.dataset.creditoId);
-        if(!credito) return;
-        const field = e.target.dataset.creditoField;
-        const nuevoValor = field==='anio' || field==='dias' ? parseInt(e.target.value)||0 : e.target.value;
-        const opNombre = Domain.getOperador(credito.operadorId)?.apellidoNombre || '';
+    const btnCargar = document.getElementById('btnCargarCredito');
+    if(btnCargar){
+      btnCargar.addEventListener('click', ()=>{
+        const opId = document.getElementById('vacOpSel').value;
+        const periodo = document.getElementById('vacPeriodoSel').value;
+        const dias = parseInt(document.getElementById('vacDiasInput').value) || 0;
+        if(!opId){ Toast.show('Elegí un operario'); return; }
+        if(!dias || dias <= 0){ Toast.show('Ingresá una cantidad de días válida'); return; }
 
         Modal.open({
-          title:'Confirmar cambio',
-          bodyHTML:`<p>¿Confirmás cambiar ${field==='anio'?'el año':'los días'} de este lote de vacaciones para <strong>${this.esc(opNombre)}</strong>?</p>`,
+          title:'Confirmar carga de crédito',
+          bodyHTML:`<p>Se van a cargar <strong>${dias} días</strong> del período <strong>${periodo}</strong> a <strong>${this.esc(Domain.getOperador(opId)?.apellidoNombre||'')}</strong>.<br>Si ya existe un lote para ese período, se suman; si no, se crea uno nuevo.</p>`,
           confirmText:'Confirmar',
           onConfirm:()=>{
-            credito[field] = nuevoValor;
-            const opId = credito.operadorId;
-            const borrados = Domain.corregirSaldoNegativoVacaciones(opId);
-            if(borrados > 0){
-              Toast.show(`Saldo ajustado: se quitaron ${borrados} día${borrados===1?'':'s'} de vacaciones ya asignadas en el calendario`);
+            const loteExistente = DB.vacacionesCreditos.find(v=>
+              v.operadorId===opId && Domain.loteGetPeriodo(v)===periodo
+            );
+            if(loteExistente){
+              loteExistente.dias += dias;
             } else {
-              Toast.show('Cambios guardados');
+              DB.vacacionesCreditos.push({ id:'vc_'+Date.now(), operadorId:opId, periodo, dias });
             }
+            Toast.show('Crédito cargado');
             this.render();
             Bus.emit();
-          },
-          onClose:()=>{ this.render(); } // si cancela, re-renderiza para restaurar el valor visual anterior
+          }
         });
       });
-    });
+    }
+
     el.querySelectorAll('.chip-del').forEach(btn=>{
       btn.addEventListener('click', (e)=>{
         const creditoId = e.currentTarget.dataset.creditoId;
@@ -2200,48 +2289,75 @@ const ViewVacaciones = {
         if(!credito) return;
         Modal.open({
           title:'Borrar lote de vacaciones',
-          bodyHTML:`<p>¿Confirmás borrar este lote (${credito.anio}: ${credito.dias} días) de <strong>${this.esc(Domain.getOperador(credito.operadorId)?.apellidoNombre||'')}</strong>? Si hay vacaciones futuras asignadas que dependan de este saldo, se van a borrar automáticamente del calendario.</p>`,
+          bodyHTML:`<p>¿Confirmás borrar el lote <strong>${Domain.loteGetPeriodo(credito)}: ${credito.dias} días</strong> de <strong>${this.esc(Domain.getOperador(credito.operadorId)?.apellidoNombre||'')}</strong>? Si hay vacaciones futuras asignadas que dependan de este saldo, se borran automáticamente del calendario.</p>`,
           confirmText:'Borrar',
           onConfirm:()=>{
             DB.vacacionesCreditos = DB.vacacionesCreditos.filter(c=> c.id !== creditoId);
             const borrados = Domain.corregirSaldoNegativoVacaciones(credito.operadorId);
-            if(borrados > 0){
-              Toast.show(`Lote eliminado — se quitaron ${borrados} día${borrados===1?'':'s'} de vacaciones ya asignadas en el calendario`);
-            } else {
-              Toast.show('Lote de vacaciones eliminado');
-            }
+            Toast.show(borrados > 0
+              ? `Lote eliminado — se quitaron ${borrados} día${borrados===1?'':'s'} del calendario`
+              : 'Lote eliminado');
             this.render();
             Bus.emit();
           }
         });
       });
     });
+
     el.querySelectorAll('[data-action="add-credito"]').forEach(btn=>{
       btn.addEventListener('click', (e)=>{
         const opId = e.currentTarget.dataset.id;
-        const anioActual = DateUtil.parse(HOY).getFullYear();
-        DB.vacacionesCreditos.push({ id:'vc_'+Date.now(), operadorId:opId, anio:anioActual, dias:7 });
-        this.render();
-        Bus.emit();
+        Modal.open({
+          title:'Agregar período de vacaciones',
+          bodyHTML:`
+            <div class="field"><label>Período</label>
+              <select id="addPeriodoSel" class="vac-sel">
+                ${this.periodosDisponibles().map(p=> `<option value="${p}" ${p===this.periodoDefault()?'selected':''}>${p}</option>`).join('')}
+              </select>
+            </div>
+            <div class="field"><label>Días</label>
+              <input type="number" id="addDiasInput" value="14" min="1" step="7">
+            </div>
+          `,
+          confirmText:'Agregar',
+          onConfirm:(body)=>{
+            const periodo = body.querySelector('#addPeriodoSel').value;
+            const dias = parseInt(body.querySelector('#addDiasInput').value)||0;
+            const lote = DB.vacacionesCreditos.find(v=>
+              v.operadorId===opId && Domain.loteGetPeriodo(v)===periodo
+            );
+            if(lote){ lote.dias += dias; }
+            else { DB.vacacionesCreditos.push({ id:'vc_'+Date.now(), operadorId:opId, periodo, dias }); }
+            Toast.show('Período agregado');
+            this.render();
+            Bus.emit();
+          }
+        });
       });
     });
+
     const btnTodos = document.getElementById('btnAsignarATodos');
     if(btnTodos){
       btnTodos.addEventListener('click', ()=>{
         Modal.open({
           title:'Asignar a todos',
           bodyHTML:`
-            <p>Se va a sumar la misma cantidad de días al año corriente (${DateUtil.parse(HOY).getFullYear()}) de <strong>cada operador</strong>, individualmente.</p>
-            <div class="field">
-              <label>Días a sumar (múltiplo de 7)</label>
-              <input type="number" id="diasMasivoInput" value="7" min="7" step="7">
+            <p>Se va a sumar la misma cantidad de días a <strong>cada operador</strong> individualmente.</p>
+            <div class="field"><label>Período</label>
+              <select id="todosPeriodoSel" class="vac-sel">
+                ${this.periodosDisponibles().map(p=> `<option value="${p}" ${p===this.periodoDefault()?'selected':''}>${p}</option>`).join('')}
+              </select>
+            </div>
+            <div class="field"><label>Días a sumar (múltiplo de 7)</label>
+              <input type="number" id="todosDiasInput" value="14" min="7" step="7">
             </div>
           `,
           confirmText:'Confirmar asignación masiva',
           onConfirm:(body)=>{
-            const dias = parseInt(body.querySelector('#diasMasivoInput').value) || 7;
-            const afectados = Domain.asignarCreditoATodos(dias);
-            Toast.show(`+${dias} días asignados a ${afectados} operarios`);
+            const periodo = body.querySelector('#todosPeriodoSel').value;
+            const dias = parseInt(body.querySelector('#todosDiasInput').value)||7;
+            const afectados = Domain.asignarCreditoATodos(dias, periodo);
+            Toast.show(`+${dias} días período ${periodo} asignados a ${afectados} operarios`);
             this.render();
             Bus.emit();
           }
