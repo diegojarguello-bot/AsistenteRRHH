@@ -2084,17 +2084,14 @@ Router.renderers.calendario = () => ViewCalendario.render();
    ======================================================================= */
 
 const ViewVacaciones = {
-  // Genera las opciones de período: desde 4 años atrás hasta 2 años adelante
+
   periodosDisponibles(){
     const anioHoy = DateUtil.parse(HOY).getFullYear();
     const periodos = [];
-    for(let a = anioHoy - 4; a <= anioHoy + 2; a++){
-      periodos.push(`${a}/${a+1}`);
-    }
+    for(let a = anioHoy - 4; a <= anioHoy + 2; a++) periodos.push(`${a}/${a+1}`);
     return periodos;
   },
 
-  // Período sugerido por defecto (el que corresponde al año corriente)
   periodoDefault(){
     const anioHoy = DateUtil.parse(HOY).getFullYear();
     return `${anioHoy}/${anioHoy+1}`;
@@ -2102,64 +2099,75 @@ const ViewVacaciones = {
 
   render(){
     const el = document.getElementById('view-vacaciones');
-    const ops = DB.operadores;
-    const opsConCreditos = ops.filter(op=> DB.vacacionesCreditos.some(v=> v.operadorId===op.id));
-    const proximos = Domain.proximosEventos();
+
+    const amOps   = DB.operadores.filter(o=> o.turno==='AM' && o.sector!=='Coordinacion');
+    const pmOps   = DB.operadores.filter(o=> o.turno==='PM' && o.sector!=='Coordinacion');
+    const coordOps= DB.operadores.filter(o=> o.sector==='Coordinacion');
+    const vacMes  = this.vacacionesEsteMes();
 
     el.innerHTML = `
-      <div class="vac-cols">
-        <div class="panel">
-          <div class="panel-head">
-            <h2>Asignar vacaciones</h2>
-            <div style="display:flex;align-items:center;gap:10px;">
-              <span class="count">FIFO por período</span>
-              <button class="btn btn-sm btn-primary" id="btnAsignarATodos">+ Asignar a todos</button>
-            </div>
+      <!-- formulario de carga -->
+      <div class="panel" style="margin-bottom:14px;">
+        <div class="panel-head">
+          <h2>Asignar vacaciones</h2>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="count">FIFO por período</span>
+            <button class="btn btn-sm btn-primary" id="btnAsignarATodos">+ Asignar a todos</button>
           </div>
-
-          <!-- Formulario de carga de crédito -->
-          <div class="vac-form-row">
-            <div class="field" style="margin:0;">
-              <label>Operario</label>
-              <select id="vacOpSel" class="vac-sel">
-                <option value="">— Seleccionar —</option>
-                ${ops.map(op=> `<option value="${op.id}">${this.esc(op.apellidoNombre)}</option>`).join('')}
-              </select>
-            </div>
-            <div class="field" style="margin:0;">
-              <label>Período</label>
-              <select id="vacPeriodoSel" class="vac-sel">
-                ${this.periodosDisponibles().map(p=> `<option value="${p}" ${p===this.periodoDefault()?'selected':''}>${p}</option>`).join('')}
-              </select>
-            </div>
-            <div class="field" style="margin:0;">
-              <label>Días</label>
-              <input type="number" id="vacDiasInput" value="14" min="1" step="7" style="width:70px;">
-            </div>
-            <button class="btn btn-primary btn-sm" id="btnCargarCredito">Confirmar carga</button>
-          </div>
-
-          <!-- Tarjetas de operadores con créditos -->
-          ${opsConCreditos.length === 0
-            ? `<div class="empty-state">Cargá créditos a los operadores usando el formulario de arriba.</div>`
-            : `<div class="vac-rows-list">${opsConCreditos.map(op=> this.tarjetaHTML(op)).join('')}</div>`
-          }
         </div>
+        <div class="vac-form-row">
+          <div class="field" style="margin:0;"><label>Operario</label>
+            <select id="vacOpSel" class="vac-sel">
+              <option value="">— Seleccionar —</option>
+              ${DB.operadores.map(op=>`<option value="${op.id}">${this.esc(op.apellidoNombre)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field" style="margin:0;"><label>Período</label>
+            <select id="vacPeriodoSel" class="vac-sel">
+              ${this.periodosDisponibles().map(p=>`<option value="${p}" ${p===this.periodoDefault()?'selected':''}>${p}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field" style="margin:0;"><label>Días</label>
+            <input type="number" id="vacDiasInput" value="14" min="1" step="7" style="width:65px;">
+          </div>
+          <button class="btn btn-primary btn-sm" id="btnCargarCredito">Confirmar carga</button>
+        </div>
+      </div>
 
-        <div class="panel">
-          <div class="panel-head">
-            <h2>Próximos eventos</h2>
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span class="count">${proximos.length}</span>
-              ${proximos.length > 0 ? `<button class="btn btn-sm" id="btnExportarProximos">Excel</button>` : ''}
-            </div>
+      <!-- 3 cuadros a lo ancho: AM / PM / COORD -->
+      <div class="vac-grid">
+        <div class="panel vac-panel-turno">
+          <div class="panel-head"><h2><span class="tag tag-am">AM</span> Mañana</h2><span class="count">${amOps.length}</span></div>
+          <div class="vac-lista" id="vacListaAM">
+            ${this.listaHTML(amOps)}
           </div>
-          <div class="hoy-alerts">
-            ${proximos.length === 0
-              ? `<div class="empty-state">No hay vacaciones ni licencias por empezar o terminar próximamente.</div>`
-              : proximos.map(a=> `<div class="hoy-alert-item"><span class="alert-dot"></span>${a.texto}</div>`).join('')
-            }
+        </div>
+        <div class="panel vac-panel-turno">
+          <div class="panel-head"><h2><span class="tag tag-pm">PM</span> Tarde</h2><span class="count">${pmOps.length}</span></div>
+          <div class="vac-lista" id="vacListaPM">
+            ${this.listaHTML(pmOps)}
           </div>
+        </div>
+        ${coordOps.length > 0 ? `
+        <div class="panel vac-panel-turno">
+          <div class="panel-head"><h2><span class="tag tag-coord">COORD</span> Coordinadores</h2><span class="count">${coordOps.length}</span></div>
+          <div class="vac-lista" id="vacListaCOORD">
+            ${this.listaHTML(coordOps)}
+          </div>
+        </div>` : ''}
+      </div>
+
+      <!-- cuadro vacaciones del mes corriente -->
+      <div class="panel" style="margin-top:14px;">
+        <div class="panel-head">
+          <h2>Vacaciones asignadas este mes</h2>
+          <span class="count">${vacMes.length} asignación${vacMes.length===1?'':'es'}</span>
+        </div>
+        <div class="hoy-alerts">
+          ${vacMes.length === 0
+            ? `<div class="empty-state">Todavía no se asignaron vacaciones este mes.</div>`
+            : vacMes.map(v=>`<div class="hoy-alert-item"><span class="alert-dot" style="background:var(--vacation);"></span><strong>${this.esc(v.operador)}</strong> — del ${DateUtil.formatShort(v.desde)} al ${DateUtil.formatShort(v.hasta)} (${v.dias} día${v.dias===1?'':'s'})</div>`).join('')
+          }
         </div>
       </div>
     `;
@@ -2168,112 +2176,129 @@ const ViewVacaciones = {
     this.bindEvents(el);
   },
 
-  tarjetaHTML(op){
-    const lotes = Domain.lotesVacacionesConSaldo(op.id);
-    const totalVigentes = lotes.reduce((s,l)=> s + l.dias, 0);
-    const cargadasCalendario = Domain.vacacionesPendientesFuturas(op.id);
-    const restoDisponible = totalVigentes - cargadasCalendario - Domain.vacacionesPasadas(op.id);
+  // lista compacta de operarios al estilo "Día de hoy"
+  listaHTML(ops){
+    if(ops.length === 0) return `<div class="empty-state">Sin operarios en este turno.</div>`;
+    return ops.map(op=>{
+      const lotes = Domain.lotesVacacionesConSaldo(op.id);
+      const total = lotes.reduce((s,l)=> s+l.dias, 0);
+      const enCal = Domain.vacacionesPendientesFuturas(op.id);
+      const resto = total - enCal - Domain.vacacionesPasadas(op.id);
+      // si no tiene créditos, muestra solo el nombre
+      if(lotes.length === 0){
+        return `
+          <div class="vac-op-row" data-op-id="${op.id}">
+            <span class="vac-op-nombre">${this.esc(op.apellidoNombre)}</span>
+            <span class="vac-op-sin">sin créditos</span>
+          </div>`;
+      }
+      return `
+        <div class="vac-op-row ${resto<0?'vac-op-negativo':''}" data-op-id="${op.id}">
+          <span class="vac-op-nombre">${this.esc(op.apellidoNombre)}</span>
+          <span class="vac-op-stats">
+            <span class="vac-stat-k">Total</span><span class="vac-stat-v">${total}d</span>
+            <span class="vac-stat-sep">·</span>
+            <span class="vac-stat-k">Cal.</span><span class="vac-stat-v">${enCal}d</span>
+            <span class="vac-stat-sep">·</span>
+            <span class="vac-stat-k">Resto</span><span class="vac-stat-v ${resto<0?'vac-stat-neg':''}">${resto}d</span>
+          </span>
+          <button class="vac-op-expand" data-op-id="${op.id}" title="Ver períodos">▾</button>
+        </div>
+        <div class="vac-op-detalle" id="det_${op.id}" style="display:none;">
+          ${lotes.map(l=>`
+            <div class="vac-det-row ${l.agotado?'vac-row-agotado':''}">
+              <span class="vac-det-periodo">${l.periodo}</span>
+              <span class="vac-det-dias">${l.dias}d</span>
+              <button class="chip-del" data-credito-id="${l.id}">×</button>
+            </div>`).join('')}
+          <button class="btn btn-sm vac-det-add" data-action="add-credito" data-id="${op.id}">+ Período</button>
+        </div>`;
+    }).join('');
+  },
 
-    return `
-      <div class="vac-row-item">
-        <!-- columna izquierda: nombre + resumen -->
-        <div class="vac-row-left">
-          <span class="vac-row-nombre">${this.esc(op.apellidoNombre)}</span>
-          <div class="vac-row-summary">
-            <span class="vac-row-kv"><span class="vac-row-k">TOTAL</span><span class="vac-row-v">${totalVigentes}d</span></span>
-            <span class="vac-row-kv"><span class="vac-row-k">EN CALENDARIO</span><span class="vac-row-v">${cargadasCalendario}d</span></span>
-            <span class="vac-row-kv ${restoDisponible < 0 ? 'vac-row-negativo':''}"><span class="vac-row-k">RESTO</span><span class="vac-row-v">${restoDisponible}d</span></span>
-          </div>
-        </div>
-        <!-- divisor vertical -->
-        <div class="vac-row-divider"></div>
-        <!-- columna derecha: períodos -->
-        <div class="vac-row-right">
-          <div class="vac-row-head-periodos">
-            <span>PERÍODO</span>
-            <span>DÍAS</span>
-            <span></span>
-          </div>
-          ${lotes.map(l=> `
-            <div class="vac-row-periodo-fila ${l.agotado?'vac-row-agotado':''}">
-              <span class="vac-periodo-label">${l.periodo}</span>
-              <span class="vac-periodo-dias">${l.dias}</span>
-              <button class="chip-del" data-credito-id="${l.id}" title="Quitar lote">×</button>
-            </div>
-          `).join('')}
-          <button class="btn btn-sm vac-row-add" data-action="add-credito" data-id="${op.id}">+ Período</button>
-        </div>
-      </div>
-    `;
+  vacacionesEsteMes(){
+    const hoyDate = DateUtil.parse(HOY);
+    const mes = hoyDate.getMonth(), anio = hoyDate.getFullYear();
+    const porOperador = {};
+    DB.eventos.filter(e=> e.tipo==='vacaciones').forEach(e=>{
+      (porOperador[e.operadorId] ||= []).push(e.fecha);
+    });
+    const resultado = [];
+    Object.entries(porOperador).forEach(([opId, fechas])=>{
+      fechas = [...new Set(fechas)].sort();
+      let bloque = [fechas[0]];
+      const bloques = [];
+      for(let i=1;i<fechas.length;i++){
+        if(DateUtil.diffDays(fechas[i-1], fechas[i])===1) bloque.push(fechas[i]);
+        else { bloques.push(bloque); bloque=[fechas[i]]; }
+      }
+      bloques.push(bloque);
+      bloques.forEach(b=>{
+        const d = DateUtil.parse(b[0]);
+        if(d.getMonth()===mes && d.getFullYear()===anio){
+          const op = Domain.getOperador(opId);
+          if(op) resultado.push({ operador:op.apellidoNombre, desde:b[0], hasta:b[b.length-1], dias:b.length });
+        }
+      });
+    });
+    return resultado.sort((a,b)=>a.desde.localeCompare(b.desde));
   },
 
   esc(s){ return (s||'').toString().replace(/"/g,'&quot;'); },
-
-  onExportarProximos(){
-    const lista = Domain.proximosEventos();
-    const filas = lista.map(a=> ({ 'Evento': a.texto, 'Días': a.dias }));
-    const ws = XLSX.utils.json_to_sheet(filas);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Próximos eventos');
-    XLSX.writeFile(wb, `proximos_eventos_${HOY}.xlsx`);
-    Toast.show('Excel exportado');
-  },
 
   injectStyles(){
     if(document.getElementById('vacStyles')) return;
     const style = document.createElement('style');
     style.id = 'vacStyles';
     style.textContent = `
-      .vac-cols{ display:grid; grid-template-columns:1.5fr 1fr; gap:18px; align-items:start; }
-      @media(max-width:980px){ .vac-cols{ grid-template-columns:1fr; } }
-
-      .vac-form-row{ display:flex; align-items:flex-end; gap:8px; padding:10px 14px; border-bottom:1px solid var(--line); background:var(--paper-dim); flex-wrap:wrap; }
+      .vac-form-row{ display:flex; align-items:flex-end; gap:8px; padding:10px 14px; flex-wrap:wrap; }
       .vac-sel{ width:auto; min-width:150px; padding:5px 8px; font-size:11.5px; }
 
-      /* Filas horizontales apiladas — compactas, una por operador */
-      .vac-rows-list{ display:flex; flex-direction:column; gap:0; padding:6px 14px; }
-      .vac-row-item{
-        display:flex; align-items:stretch;
-        border:1px solid #E5D9B6; border-radius:6px;
-        background:var(--white); margin-bottom:5px;
-        overflow:hidden;
-      }
-      .vac-row-left{
-        background:var(--vacation-soft);
-        padding:6px 12px;
-        min-width:220px; max-width:240px;
-        display:flex; flex-direction:column; justify-content:center; gap:3px;
-        border-right:1px solid #E5D9B6;
-      }
-      .vac-row-nombre{ font-weight:700; font-size:10.5px; color:#5A4010; }
-      .vac-row-summary{ display:flex; gap:10px; }
-      .vac-row-kv{ display:flex; flex-direction:column; gap:0; }
-      .vac-row-k{ font-size:7.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#8A6520; }
-      .vac-row-v{ font-family:var(--f-mono); font-weight:700; font-size:11.5px; color:var(--navy); }
-      .vac-row-negativo .vac-row-v{ color:var(--brick); }
+      /* Grid de 3 cuadros */
+      .vac-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; align-items:start; }
+      @media(max-width:1100px){ .vac-grid{ grid-template-columns:1fr 1fr; } }
+      @media(max-width:700px){ .vac-grid{ grid-template-columns:1fr; } }
+      .vac-panel-turno{ overflow:hidden; }
 
-      .vac-row-divider{ width:1px; background:#E5D9B6; flex:0 0 1px; }
+      /* Filas de operario — estilo "Día de hoy" */
+      .vac-lista{ }
+      .vac-op-row{
+        display:flex; align-items:center; gap:6px;
+        padding:6px 14px; border-bottom:1px solid var(--line);
+        font-size:10.5px;
+      }
+      .vac-op-row:last-of-type{ border-bottom:none; }
+      .vac-op-nombre{ flex:1; font-weight:600; color:var(--ink); font-size:10.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .vac-op-sin{ font-size:9.5px; color:var(--ink-dim); font-style:italic; }
+      .vac-op-negativo .vac-op-nombre{ color:var(--brick); }
 
-      .vac-row-right{
-        flex:1; padding:5px 12px;
-        display:flex; flex-direction:column; justify-content:center; gap:2px;
+      .vac-op-stats{ display:flex; align-items:center; gap:3px; white-space:nowrap; }
+      .vac-stat-k{ font-size:8.5px; font-weight:600; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.03em; }
+      .vac-stat-v{ font-family:var(--f-mono); font-size:10.5px; font-weight:700; color:var(--navy); }
+      .vac-stat-sep{ color:var(--line); font-size:10px; }
+      .vac-stat-neg{ color:var(--brick); }
+
+      .vac-op-expand{
+        background:none; border:none; cursor:pointer; color:var(--ink-dim);
+        font-size:11px; padding:0 4px; line-height:1; transition:transform .15s;
       }
-      .vac-row-head-periodos{
-        display:grid; grid-template-columns:1fr 44px 20px;
-        font-size:7.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
-        color:var(--ink-dim); padding-bottom:3px; border-bottom:1px solid var(--line); margin-bottom:1px;
+      .vac-op-expand.open{ transform:rotate(180deg); }
+
+      /* Detalle desplegable de períodos */
+      .vac-op-detalle{
+        background:var(--vacation-soft); border-bottom:1px solid #E5D9B6;
+        padding:6px 14px 8px 28px;
       }
-      .vac-row-periodo-fila{
-        display:grid; grid-template-columns:1fr 44px 20px;
-        align-items:center; padding:2px 0;
+      .vac-det-row{
+        display:grid; grid-template-columns:1fr 40px 20px;
+        align-items:center; padding:2px 0; font-size:10.5px;
       }
-      .vac-periodo-label{ font-family:var(--f-mono); font-size:10.5px; font-weight:600; color:var(--ink); }
-      .vac-periodo-dias{ font-family:var(--f-mono); font-weight:700; font-size:10.5px; color:var(--steel); }
-      .vac-row-agotado .vac-periodo-label,
-      .vac-row-agotado .vac-periodo-dias{ opacity:.35; text-decoration:line-through; }
+      .vac-det-periodo{ font-family:var(--f-mono); font-weight:600; color:#5A4010; }
+      .vac-det-dias{ font-family:var(--f-mono); font-weight:700; color:var(--steel); }
+      .vac-row-agotado .vac-det-periodo, .vac-row-agotado .vac-det-dias{ opacity:.35; text-decoration:line-through; }
       .chip-del{ background:none; border:none; color:var(--brick); opacity:.4; font-size:13px; cursor:pointer; padding:0 2px; line-height:1; }
       .chip-del:hover{ opacity:1; }
-      .vac-row-add{ margin-top:3px; align-self:flex-start; }
+      .vac-det-add{ margin-top:5px; }
 
       .hoy-alerts{ padding:4px 0; }
       .hoy-alert-item{ display:flex; align-items:center; gap:8px; padding:7px 14px; font-size:10.5px; border-bottom:1px solid var(--line); }
@@ -2284,117 +2309,111 @@ const ViewVacaciones = {
   },
 
   bindEvents(el){
-    const btnExpProx = document.getElementById('btnExportarProximos');
-    if(btnExpProx) btnExpProx.addEventListener('click', ()=> this.onExportarProximos());
-
-    const btnCargar = document.getElementById('btnCargarCredito');
-    if(btnCargar){
-      btnCargar.addEventListener('click', ()=>{
-        const opId = document.getElementById('vacOpSel').value;
-        const periodo = document.getElementById('vacPeriodoSel').value;
-        const dias = parseInt(document.getElementById('vacDiasInput').value) || 0;
-        if(!opId){ Toast.show('Elegí un operario'); return; }
-        if(!dias || dias <= 0){ Toast.show('Ingresá una cantidad de días válida'); return; }
-
-        Modal.open({
-          title:'Confirmar carga de crédito',
-          bodyHTML:`<p>Se van a cargar <strong>${dias} días</strong> del período <strong>${periodo}</strong> a <strong>${this.esc(Domain.getOperador(opId)?.apellidoNombre||'')}</strong>.<br>Si ya existe un lote para ese período, se suman; si no, se crea uno nuevo.</p>`,
-          confirmText:'Confirmar',
-          onConfirm:()=>{
-            const loteExistente = DB.vacacionesCreditos.find(v=>
-              v.operadorId===opId && Domain.loteGetPeriodo(v)===periodo
-            );
-            if(loteExistente){
-              loteExistente.dias += dias;
-            } else {
-              DB.vacacionesCreditos.push({ id:'vc_'+Date.now(), operadorId:opId, periodo, dias });
-            }
-            Toast.show('Crédito cargado');
-            this.render();
-            Bus.emit();
-          }
-        });
+    // expandir/colapsar detalle de períodos por operario
+    el.querySelectorAll('.vac-op-expand').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{
+        const opId = e.currentTarget.dataset.opId;
+        const det = document.getElementById('det_'+opId);
+        const open = det.style.display !== 'none';
+        det.style.display = open ? 'none' : '';
+        e.currentTarget.classList.toggle('open', !open);
       });
-    }
+    });
 
+    // borrar lote de período
     el.querySelectorAll('.chip-del').forEach(btn=>{
       btn.addEventListener('click', (e)=>{
         const creditoId = e.currentTarget.dataset.creditoId;
-        const credito = DB.vacacionesCreditos.find(c=> c.id === creditoId);
+        const credito = DB.vacacionesCreditos.find(c=> c.id===creditoId);
         if(!credito) return;
         Modal.open({
           title:'Borrar lote de vacaciones',
           bodyHTML:`<p>¿Confirmás borrar el lote <strong>${Domain.loteGetPeriodo(credito)}: ${credito.dias} días</strong> de <strong>${this.esc(Domain.getOperador(credito.operadorId)?.apellidoNombre||'')}</strong>? Si hay vacaciones futuras asignadas que dependan de este saldo, se borran automáticamente del calendario.</p>`,
           confirmText:'Borrar',
           onConfirm:()=>{
-            DB.vacacionesCreditos = DB.vacacionesCreditos.filter(c=> c.id !== creditoId);
+            DB.vacacionesCreditos = DB.vacacionesCreditos.filter(c=> c.id!==creditoId);
             const borrados = Domain.corregirSaldoNegativoVacaciones(credito.operadorId);
-            Toast.show(borrados > 0
-              ? `Lote eliminado — se quitaron ${borrados} día${borrados===1?'':'s'} del calendario`
-              : 'Lote eliminado');
-            this.render();
-            Bus.emit();
+            Toast.show(borrados>0 ? `Lote eliminado — se quitaron ${borrados} día${borrados===1?'':'s'} del calendario` : 'Lote eliminado');
+            this.render(); Bus.emit();
           }
         });
       });
     });
 
+    // agregar período desde el detalle
     el.querySelectorAll('[data-action="add-credito"]').forEach(btn=>{
       btn.addEventListener('click', (e)=>{
         const opId = e.currentTarget.dataset.id;
         Modal.open({
-          title:'Agregar período de vacaciones',
+          title:'Agregar período',
           bodyHTML:`
             <div class="field"><label>Período</label>
               <select id="addPeriodoSel" class="vac-sel">
-                ${this.periodosDisponibles().map(p=> `<option value="${p}" ${p===this.periodoDefault()?'selected':''}>${p}</option>`).join('')}
+                ${this.periodosDisponibles().map(p=>`<option value="${p}" ${p===this.periodoDefault()?'selected':''}>${p}</option>`).join('')}
               </select>
             </div>
             <div class="field"><label>Días</label>
               <input type="number" id="addDiasInput" value="14" min="1" step="7">
-            </div>
-          `,
+            </div>`,
           confirmText:'Agregar',
           onConfirm:(body)=>{
             const periodo = body.querySelector('#addPeriodoSel').value;
             const dias = parseInt(body.querySelector('#addDiasInput').value)||0;
-            const lote = DB.vacacionesCreditos.find(v=>
-              v.operadorId===opId && Domain.loteGetPeriodo(v)===periodo
-            );
-            if(lote){ lote.dias += dias; }
-            else { DB.vacacionesCreditos.push({ id:'vc_'+Date.now(), operadorId:opId, periodo, dias }); }
-            Toast.show('Período agregado');
-            this.render();
-            Bus.emit();
+            const lote = DB.vacacionesCreditos.find(v=> v.operadorId===opId && Domain.loteGetPeriodo(v)===periodo);
+            if(lote) lote.dias+=dias;
+            else DB.vacacionesCreditos.push({id:'vc_'+Date.now(), operadorId:opId, periodo, dias});
+            Toast.show('Período agregado'); this.render(); Bus.emit();
           }
         });
       });
     });
 
+    // confirmar carga desde el formulario
+    const btnCargar = document.getElementById('btnCargarCredito');
+    if(btnCargar){
+      btnCargar.addEventListener('click', ()=>{
+        const opId = document.getElementById('vacOpSel').value;
+        const periodo = document.getElementById('vacPeriodoSel').value;
+        const dias = parseInt(document.getElementById('vacDiasInput').value)||0;
+        if(!opId){ Toast.show('Elegí un operario'); return; }
+        if(!dias||dias<=0){ Toast.show('Ingresá una cantidad válida'); return; }
+        Modal.open({
+          title:'Confirmar carga',
+          bodyHTML:`<p>Se cargan <strong>${dias} días</strong> del período <strong>${periodo}</strong> a <strong>${this.esc(Domain.getOperador(opId)?.apellidoNombre||'')}</strong>.</p>`,
+          confirmText:'Confirmar',
+          onConfirm:()=>{
+            const lote = DB.vacacionesCreditos.find(v=> v.operadorId===opId && Domain.loteGetPeriodo(v)===periodo);
+            if(lote) lote.dias+=dias;
+            else DB.vacacionesCreditos.push({id:'vc_'+Date.now(), operadorId:opId, periodo, dias});
+            Toast.show('Crédito cargado'); this.render(); Bus.emit();
+          }
+        });
+      });
+    }
+
+    // asignar a todos
     const btnTodos = document.getElementById('btnAsignarATodos');
     if(btnTodos){
       btnTodos.addEventListener('click', ()=>{
         Modal.open({
           title:'Asignar a todos',
           bodyHTML:`
-            <p>Se va a sumar la misma cantidad de días a <strong>cada operador</strong> individualmente.</p>
+            <p>Se suma la misma cantidad de días a <strong>cada operador</strong> individualmente.</p>
             <div class="field"><label>Período</label>
               <select id="todosPeriodoSel" class="vac-sel">
-                ${this.periodosDisponibles().map(p=> `<option value="${p}" ${p===this.periodoDefault()?'selected':''}>${p}</option>`).join('')}
+                ${this.periodosDisponibles().map(p=>`<option value="${p}" ${p===this.periodoDefault()?'selected':''}>${p}</option>`).join('')}
               </select>
             </div>
             <div class="field"><label>Días a sumar (múltiplo de 7)</label>
               <input type="number" id="todosDiasInput" value="14" min="7" step="7">
-            </div>
-          `,
+            </div>`,
           confirmText:'Confirmar asignación masiva',
           onConfirm:(body)=>{
             const periodo = body.querySelector('#todosPeriodoSel').value;
             const dias = parseInt(body.querySelector('#todosDiasInput').value)||7;
             const afectados = Domain.asignarCreditoATodos(dias, periodo);
             Toast.show(`+${dias} días período ${periodo} asignados a ${afectados} operarios`);
-            this.render();
-            Bus.emit();
+            this.render(); Bus.emit();
           }
         });
       });
